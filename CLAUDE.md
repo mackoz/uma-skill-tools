@@ -21,6 +21,7 @@ Guidance for working in this repo. It's the race-simulation engine — no UI, no
 - No skill cooldowns — a skill can only activate once per simulated race.
 - No value/duration/level scaling tables.
 - `accumulatetime` combined with a distribution-modeled condition may still activate earlier than the distribution predicts (no per-skill exemption list, unlike upstream's).
+- A handful of shipped skill conditions (`temptation_opponent_count_behind`/`_infront`, `is_other_character_activate_advantage_skill`, plus ~11 JP-only names) aren't registered in `ActivationConditions.ts`'s `Conditions` table. Referencing one now throws a named `ConditionParser` `ParseError: unknown condition: <name>` at skill-build time instead of a bare `TypeError` — see `README.md`'s "Unknown skill conditions now fail loudly, by name" section.
 
 ## `test/`, `tools/`, and pre-existing `tsc` errors
 

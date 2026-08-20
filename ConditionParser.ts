@@ -82,7 +82,14 @@ export function getParser<ConditionT = Condition, OperatorT = Operator>(
 		}
 
 		nud(state: ParserState<ConditionT,OperatorT>) {
-			return {type: NodeType.Cond, cond: conditions[this.value as keyof typeof conditions]} as Node<ConditionT,OperatorT>;
+			const cond = conditions[this.value as keyof typeof conditions];
+			// fail loudly and by name instead of letting an unrecognized identifier silently resolve to
+			// `undefined` and blow up later as `TypeError: Cannot read properties of undefined (reading
+			// 'samplePolicy')` inside EqOperator's constructor — same failure, much worse message.
+			if (cond == null) {
+				throw new ParseError('unknown condition: ' + this.value);
+			}
+			return {type: NodeType.Cond, cond} as Node<ConditionT,OperatorT>;
 		}
 	}
 
