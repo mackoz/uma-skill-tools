@@ -247,6 +247,21 @@ export function noopErlangRandom(k: number, lambda: number) {
 
 export const noopUniformRandom = uniformRandom(noopAll);
 
+// This is a hack to prevnt skills like Dodging Danger from activating 0s into the race when their condition is >=1s
+// 13m/s * time is *not* accurate beyond 1s but it's a good enough approximation to appropriately delay skill activation
+function shiftRegionsForwardByMinTime(regions: RegionList, minTime: number, course: CourseData, _: HorseParameters, extra: RaceParameters) {
+	const minDistance = 13 * minTime;
+	const shiftedRegions = new RegionList();
+	regions.forEach(r => {
+		if (r.start === 0) {
+			shiftedRegions.push(new Region(r.start + minDistance, r.end));
+		} else {
+			shiftedRegions.push(r);
+		}
+	});
+	return shiftedRegions.length > 0 ? shiftedRegions : new RegionList();
+}
+
 function noopSectionRandom(start: number, end: number) {
 	function sectionRandom(regions: RegionList, _0: number, course: CourseData, _1: HorseParameters, extra: RaceParameters) {
 		const bounds = new Region(start * (course.distance / 24), end * (course.distance / 24));
@@ -395,30 +410,10 @@ export const Conditions: {[cond: string]: Condition} = Object.freeze({
 			// but we threw the other regions out because it has the immediate sample policy.
 			// so resolve this by estimating where the skill can't possibly activate and then statically filtering that
 			// area out. due to the need to accelerate as well as factors like pace down etc, baseSpeed * t typically
-			// overestimates the distance traveled so use 0.85 * baseSpeed * t instead. underestimating is a bit
-			// dangerous but i believe this solves all the cases where this is an issue in practice.
-			// 
-			// VERY UGLY: skip doing this for skills that combine accumulatetime with a random or mock random condition,
-			// because otherwise this would cause it to whiff less than it should
-			// (consider the case of phase_random==0&accumulatetime>=3 for example)
-			// FIXME nasty
-			let allowedRegion;
-			if ([
-				'100302211', '100403111', '100501111', '101001211', '101002111', '101021', '101802111', '101901111', '102002211', '102302111',
-				'103103211', '103203211', '103301111', '103501111', '103801211', '103802111', '103802121', '104002111', '104201211', '105201111',
-				'105202211', '106003111', '106401111', '109302211', '110001111', '110001121', '110001211', '110602111', '110651', '112402111',
-				'120681', '200401', '200441', '200442', '200521', '200831', '200861', '200891', '200921', '201011', '201012', '201021', '201022',
-				'201071', '201072', '201091', '201092', '201141', '201142', '201201', '201202', '201271', '201272', '201302', '201401', '201402',
-				'201491', '201492', '201591', '201592', '201651', '201652', '201661', '201662', '202301', '202302', '202303', '202351', '202352',
-				'203601', '203602', '203861', '203862', '203871', '203872', '204001', '204002', '204041', '204042', '408011', '409051', '412011',
-				'412031'
-			].indexOf(extra.skillId) > -1) {
-				allowedRegion = new Region(0, course.distance);
-			} else {
-				const baseSpeed = 20.0 - (course.distance - 2000) / 1000.0;
-				allowedRegion = new Region(0.85 * baseSpeed * t, course.distance);
-			}
-			return [regions.rmap(r => r.intersect(allowedRegion)), (s: RaceState) => s.accumulatetime.t >= t] as [RegionList, DynamicCondition];
+			// overestimates the distance traveled so use 0.85 * baseSpeed * t instead.
+			const baseSpeed = 20.0 - (course.distance - 2000) / 1000.0;
+			const rest = new Region(0.85 * baseSpeed * t, course.distance);
+			return [regions.rmap(r => r.intersect(rest)), (s: RaceState) => s.accumulatetime.t >= t] as [RegionList, DynamicCondition];
 		}
 	}),
 	activate_count_all: immediate({
@@ -477,8 +472,12 @@ export const Conditions: {[cond: string]: Condition} = Object.freeze({
 	behind_near_lane_time_set1: noopErlangRandom(3, 2.0),
 	blocked_all_continuetime: noopErlangRandom(3, 2.0),
 	blocked_front: noopErlangRandom(3, 2.0),
-	blocked_front_continuetime: noopErlangRandom(3, 2.0),
-	blocked_side_continuetime: noopErlangRandom(3, 2.0),
+	blocked_front_continuetime: erlangRandom(3, 2.0, {
+		filterGte: shiftRegionsForwardByMinTime
+	}),
+	blocked_side_continuetime: erlangRandom(3, 2.0, {
+		filterGte: shiftRegionsForwardByMinTime
+	}),
 	change_order_onetime: noopErlangRandom(3, 2.0),
 	change_order_up_end_after: erlangRandom(3, 2.0, {
 		filterGte(regions: RegionList, _0: number, course: CourseData, _1: HorseParameters, extra: RaceParameters) {
@@ -637,12 +636,6 @@ export const Conditions: {[cond: string]: Condition} = Object.freeze({
 		}
 	}),
 	infront_near_lane_time: noopErlangRandom(3, 2.0),
-	is_activate_any_skill: immediate({
-		filterEq(regions: RegionList, one: number, _0: CourseData, _1: HorseParameters, extra: RaceParameters) {
-			assert(one == 1, 'must be is_activate_any_skill==1');
-			return [regions, (s: RaceState) => s.activateCountLastFrame > 0] as [RegionList, DynamicCondition];
-		}
-	}),
 	is_activate_other_skill_detail: immediate({
 		filterEq(regions: RegionList, one: number, _0: CourseData, _1: HorseParameters, extra: RaceParameters) {
 			assert(one == 1, 'must be is_activate_other_skill_detail==1');
@@ -673,7 +666,6 @@ export const Conditions: {[cond: string]: Condition} = Object.freeze({
 			return [10101, 10103, 10104, 10105].indexOf(course.raceTrackId) == -1 ? regions : new RegionList();
 		}
 	}),
-	is_exist_skill_id: noopImmediate,
 	is_finalcorner: immediate({
 		filterEq(regions: RegionList, flag: number, course: CourseData, _: HorseParameters, extra: RaceParameters) {
 			assert(flag == 0 || flag == 1, 'must be is_finalcorner==0 or is_finalcorner==1');
@@ -744,11 +736,7 @@ export const Conditions: {[cond: string]: Condition} = Object.freeze({
 	is_move_lane: noopErlangRandom(5, 1.0),
 	is_overtake: noopErlangRandom(1, 2.0),
 	is_surrounded: noopErlangRandom(3, 2.0),
-	is_temptation: immediate({
-		filterEq(regions: RegionList, b: number, _0: CourseData, _1: HorseParameters, extra: RaceParameters) {
-			return [regions, (s: RaceState) => +s.isKakari == b] as [RegionList, DynamicCondition];
-		}
-	}),
+	is_temptation: noopImmediate,
 	is_used_skill_id: immediate({
 		filterEq(regions: RegionList, skillId: number, _0: CourseData, _1: HorseParameters, extra: RaceParameters) {
 			return [regions, (s: RaceState) => s.usedSkills.has('' + skillId)] as [RegionList, DynamicCondition];
@@ -777,7 +765,7 @@ export const Conditions: {[cond: string]: Condition} = Object.freeze({
 		}
 	}),
 	motivation: valueFilter((_0: CourseData, _1: HorseParameters, extra: RaceParameters) => extra.mood + 3),  // go from -2 to 2 to 1-5 scale
-	near_count: noopErlangRandom(3, 2.0),
+	near_count: noopErlangRandom(2.0, 2.0),
 	order: orderFilter((pos: number, _: number) => pos),
 	order_rate: orderFilter((rate: number, numUmas: number) => Math.round(numUmas * (rate / 100.0))),
 	order_rate_in20_continue: orderInFilter(0.2),
@@ -800,7 +788,7 @@ export const Conditions: {[cond: string]: Condition} = Object.freeze({
 			// obviously hard coding the skills we want to fudge this for is not really ideal, but it's not clear that it's
 			// safe to do in all cases. technically to fix this `phase` should probably be a dynamic condition that actually
 			// checks the phase to match in-game mechanics
-			const fudge = ['100591', '900591', '110261', '910261', '110191', '910191', '120451', '920451', '101502121'].indexOf(extra.skillId) > -1 ? 10 : 0;
+			const fudge = ['100591', '900591', '110261', '910261', '110191', '910191', '120451', '920451', '101502121', '100461'].indexOf(extra.skillId) > -1 ? 10 : 0;
 			const bounds = new Region(CourseHelpers.phaseStart(course.distance, phase), CourseHelpers.phaseEnd(course.distance, phase) + fudge);
 			return regions.rmap(r => r.intersect(bounds));
 		},
@@ -904,7 +892,7 @@ export const Conditions: {[cond: string]: Condition} = Object.freeze({
 		filterGt: notSupported,
 		filterGte: notSupported
 	},
-	popularity: valueFilter((_0: CourseData, _1: HorseParameters, extra: RaceParameters) => extra.popularity),
+	popularity: noopImmediate,
 	post_number: (function () {
 		function gateBlock(s: RaceState, numUmas: number) {
 			const gateNumber = s.gateRoll % numUmas;  // modulo result guaranteed to be uniformly distributed due to the properties of s.gateRoll
@@ -944,14 +932,6 @@ export const Conditions: {[cond: string]: Condition} = Object.freeze({
 		}
 	}),
 	rotation: valueFilter((course: CourseData, _: HorseParameters, extra: RaceParameters) => course.turn),
-	run_at_full_speed_random: random({
-		filterEq(regions: RegionList, one: number, course: CourseData, _: HorseParameters, extra: RaceParameters) {
-			assert(one == 1, 'must be run_at_full_speed_random==1');
-			// TODO proc conditions are not known yet
-			const bounds = new Region(CourseHelpers.phaseStart(course.distance, 3), course.distance);
-			return regions.rmap(r => r.intersect(bounds));
-		}
-	}),
 	running_style: immediate({
 		filterEq(regions: RegionList, strategy: number, _: CourseData, horse: HorseParameters, extra: RaceParameters) {
 			StrategyHelpers.assertIsStrategy(strategy);
@@ -981,11 +961,6 @@ export const Conditions: {[cond: string]: Condition} = Object.freeze({
 		(_: CourseData, horse: HorseParameters, extra: RaceParameters) => +StrategyHelpers.strategyMatches(horse.strategy, Strategy.Oikomi)
 	),
 	running_style_equal_popularity_one: noopImmediate,
-	// TODO because we actually implement kakari now these should no longer be sectionRandom. unfortunately, it's not really clear what
-	// a good way to implement these would be; tentatively considering some kind of publish/subscribe mechanism among `RaceSolver`s to
-	// allow them to communicate.
-	// this also applies to the temptation_count_behind/temptation_count_infront ones
-	// also TODO: implement the _opponent ones
 	running_style_temptation_count_nige: noopSectionRandom(2,9),
 	running_style_temptation_count_senko: noopSectionRandom(2,9),
 	running_style_temptation_count_sashi: noopSectionRandom(2,9),
@@ -1030,13 +1005,7 @@ export const Conditions: {[cond: string]: Condition} = Object.freeze({
 		filterGt: notSupported,
 		filterGte: notSupported
 	},
-	temptation_count: immediate({
-		filterEq(regions: RegionList, n: number, course: CourseData, _: HorseParameters, extra: RaceParameters) {
-			return [regions, (s: RaceState) => s.temptationCount == n] as [RegionList, DynamicCondition];
-		}
-	}),
-	// see TODO for running_style_temptation_count_* above
-	// these also have _opponent variants
+	temptation_count: noopImmediate,
 	temptation_count_behind: noopSectionRandom(2,9),
 	temptation_count_infront: noopSectionRandom(2,9),
 	time: valueFilter((_0: CourseData, _1: HorseParameters, extra: RaceParameters) => extra.time),

@@ -29,15 +29,13 @@ sub patch_modifier {
 	);
 	if (grep(/^$id$/, @scenario_skills)) {
 		return $value * 1.2;
-	} elsif ($id == 202031 || $id == 202032 || $id == 104901111) {  # あやしげな作戦 and variants
-		return $value * 0.04;  # should be random 0%-4%, TODO remove when dynamic scaling is implemented
 	} else {
 		return $value;
 	}
 }
 
 my $select = $db->prepare(<<SQL
-SELECT id, rarity, activate_lot,
+SELECT id, rarity,
        precondition_1, condition_1,
        float_ability_time_1,
        ability_type_1_1, float_ability_value_1_1, target_type_1_1,
@@ -57,7 +55,7 @@ SQL
 $select->execute;
 
 my (
-	$id, $rarity, $activate_lot,
+	$id, $rarity,
 	$precondition_1, $condition_1,
 	$float_ability_time_1,
 	$ability_type_1_1, $float_ability_value_1_1, $target_type_1_1,
@@ -72,7 +70,7 @@ my (
 );
 
 $select->bind_columns(\(
-	$id, $rarity, $activate_lot,
+	$id, $rarity,
 	$precondition_1, $condition_1,
 	$float_ability_time_1,
 	$ability_type_1_1, $float_ability_value_1_1, $target_type_1_1,
@@ -116,7 +114,7 @@ while ($select->fetch) {
 			effects => \@effects_2
 		};
 	}
-	$skills->{$id} = {rarity => $rarity, wisdomCheck => $activate_lot, alternatives => \@triggers};
+	$skills->{$id} = {rarity => $rarity, alternatives => \@triggers};
 }
 
 my $json = JSON::PP->new;

@@ -72,6 +72,16 @@ List of skills affected:
 
 All of these things should be doable with the current architecture and are planned for the near future.
 
+### Does not simulate downhill speedup mode
+
+The architecture now allows it to be doable in a way to usefully allow comparisons even though the effects are random.
+
+### Does not simulate kakari
+
+Easily doable but no real point without tracking hp consumption since both simulations would always kakari at the same point during a comparison.
+
+If it is implemented would probably have the effect of increasing int decreasing average バ身 gain due to less kakari, since position keep effects aren't simulated which would otherwise counteract it.
+
 ### Scaling effects are not implemented yet
 
 Some of these are going to be a real pain.

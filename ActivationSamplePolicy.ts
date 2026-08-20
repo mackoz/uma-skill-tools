@@ -114,7 +114,8 @@ export class LogNormalRandomPolicy extends DistributionRandomPolicy {
 
 	distribution(upper: number, nsamples: number, rng: PRNG) {
 		// see <https://en.wikipedia.org/wiki/Box%E2%80%93Muller_transform>
-		const nums = [], halfn = Math.ceil(nsamples / 2);
+		let nums = [], min = Infinity, max = 0.0;
+		const halfn = Math.ceil(nsamples / 2);
 		for (let i = 0; i < halfn; ++i) {
 			let x, y, r2;
 			do {
@@ -125,27 +126,12 @@ export class LogNormalRandomPolicy extends DistributionRandomPolicy {
 			const m = Math.sqrt(-2.0 * Math.log(r2) / r2) * this.sigma;
 			const a = Math.exp(x * m + this.mu);
 			const b = Math.exp(y * m + this.mu);
+			min = Math.min(min, a, b);
+			max = Math.max(max, a, b);
 			nums.push(a,b);
 		}
-		// this is one of the more mathematically suspect parts of the whole endeavour. essentially we have a bunch of numbers `nums` in (0,+∞).
-		// what we want is a bunch of numbers in [0,upper] with essentially the same skewness, excess kurtosis, etc as `nums`. the obvious way to do
-		// that is to normalize nums to [0,1] and multiply that by `upper`. formerly we normalized to the observed min and max, but particularly
-		// when `nsamples` is small this is not great. instead we estimate the 0.1th percentile and 99.9th percentile of values that we are likely
-		// to see for a given μ and σ, and normalize to that. i am not completely sure that this is a reasonable thing to do.
-		// 
-		// i feel like there should be some way to do this directly and avoid this step while being more theoretically sound, but i haven't thought
-		// of it yet.
-		// 
-		// the reason we have to do the scaling like this is because `upper` isn't known at the time the parameters are chosen, so we can't pick ones
-		// that naturally go from 0 to ~upper.
-		// 
-		// the dumb part about this is that it makes μ meaningless obviously.
-
-		// inverse CDF is e^(μ + σ√2 · erf⁻¹(2p - 1))
-		// constants obtained via Mathematica `InverseErf[2 * 0.999 - 1] * Sqrt[2]`
-		const min = Math.exp(this.mu + this.sigma * -3.09023), max = Math.exp(this.mu + this.sigma * 3.09023);
 		const range = max - min;
-		return nums.map(n => Math.floor(upper * Math.min(Math.max(n - min, 0) / range, 1.0)));
+		return nums.map(n => Math.floor(upper * (n - min) / range));
 	}
 }
 
@@ -154,24 +140,23 @@ export class ErlangRandomPolicy extends DistributionRandomPolicy {
 
 	distribution(upper: number, nsamples: number, rng: PRNG) {
 		const nums = [];
+		let min = Infinity, max = 0.0;
 		for (let i = 0; i < nsamples; ++i) {
 			let u = 1.0;
 			for (let j = 0; j < this.k; ++j) {
 				u *= rng.random();
 			}
 			const n = -Math.log(u) / this.lambda;
+			min = Math.min(min, n);
+			max = Math.max(max, n);
 			nums.push(n);
 		}
-		// the comment in LogNormalRandomPolicy#distribution applies here as well, but much worse. there is no closed-form inverse CDF for an Erlang
-		// distribution, so (and surely there's a better way to do this) we just pretend it's a chi-squared distribution with 2k and then use the
-		// Wilson-Hilferty transformation to approximate it as a normal distribution. yes, this is pretty awful. in practice the approximation is
-		// surprisingly okay, though i don't really feel good about this. im also not at all sure i didnt make some mistakes in the math, but testing
-		// it numerically its remarkably close.
-		// as with μ above, λ controls the scale of the distribution but we rescale everything anyway, so it is completely irrelevant.
-		const min = this.k * Math.pow(1 - 1/(9*this.k) + -3.09023 * Math.sqrt(1/(9*this.k)), 3) / this.lambda,
-			max = this.k * Math.pow(1 - 1/(9*this.k) + 3.09023 * Math.sqrt(1/(9*this.k)), 3) / this.lambda;
+		if (nsamples == 1) {
+			const scale = 18;
+			return nums.map(n => Math.floor(upper * Math.min(n / scale, 1.0)));
+		}
 		const range = max - min;
-		return nums.map(n => Math.floor(upper * Math.min(Math.max(n - min, 0) / range, 1.0)));
+		return nums.map(n => Math.floor(upper * (n - min) / range));
 	}
 }
 
@@ -233,3 +218,28 @@ export const AllCornerRandomPolicy = Object.freeze({
 	reconcileStraightRandom(_: ActivationSamplePolicy) { throw new Error('cannot reconcile StraightRandomPolicy with AllCornerRandomPolicy'); },
 	reconcileAllCornerRandom(_: ActivationSamplePolicy) { return this; }
 });
+
+/**
+ * Creates a fixed position sample policy that forces a skill to activate at a specific distance.
+ * This ignores the skill's normal activation conditions and places the trigger at the exact position specified.
+ * @param position The distance (in meters) where the skill should activate
+ * @returns An ActivationSamplePolicy that always triggers at the specified position
+ */
+export function createFixedPositionPolicy(position: number): ActivationSamplePolicy {
+	return Object.freeze({
+		sample(_regions: RegionList, nsamples: number, _rng: PRNG) {
+			// Always return the same fixed position for all samples
+			const samples = [];
+			for (let i = 0; i < nsamples; ++i) {
+				samples.push(new Region(position, position + 10));
+			}
+			return samples;
+		},
+		reconcile(_other: ActivationSamplePolicy) { return this; },
+		reconcileImmediate(_: ActivationSamplePolicy) { return this; },
+		reconcileDistributionRandom(_: ActivationSamplePolicy) { return this; },
+		reconcileRandom(_: ActivationSamplePolicy) { return this; },
+		reconcileStraightRandom(_: ActivationSamplePolicy) { return this; },
+		reconcileAllCornerRandom(_: ActivationSamplePolicy) { return this; }
+	});
+}
