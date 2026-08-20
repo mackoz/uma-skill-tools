@@ -1012,7 +1012,7 @@ export class RaceSolver {
 				this.posKeepSpeedCoef = 1.04;
 				break;
 			case PositionKeepState.PaceDown:
-				this.posKeepSpeedCoef = 0.915; // 0.945x in mid-race post 1st-anniversary
+				this.posKeepSpeedCoef = this.phase == 1 ? 0.945 : 0.915;
 				break;
 			default:
 				this.posKeepSpeedCoef = 1.0;
