@@ -132,6 +132,8 @@ export interface RaceState {
 	readonly usedSkills: ReadonlySet<string>
 	readonly leadCompetition: boolean
 	readonly posKeepStrategy: Strategy
+	readonly isRushed: boolean
+	readonly hasBeenRushed: boolean
 }
 
 export type DynamicCondition = (state: RaceState) => boolean;

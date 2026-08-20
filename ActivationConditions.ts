@@ -736,7 +736,11 @@ export const Conditions: {[cond: string]: Condition} = Object.freeze({
 	is_move_lane: noopErlangRandom(5, 1.0),
 	is_overtake: noopErlangRandom(1, 2.0),
 	is_surrounded: noopErlangRandom(3, 2.0),
-	is_temptation: noopImmediate,
+	is_temptation: immediate({
+		filterEq(regions: RegionList, b: number, _0: CourseData, _1: HorseParameters, extra: RaceParameters) {
+			return [regions, (s: RaceState) => +s.isRushed == b] as [RegionList, DynamicCondition];
+		}
+	}),
 	is_used_skill_id: immediate({
 		filterEq(regions: RegionList, skillId: number, _0: CourseData, _1: HorseParameters, extra: RaceParameters) {
 			return [regions, (s: RaceState) => s.usedSkills.has('' + skillId)] as [RegionList, DynamicCondition];
@@ -1005,7 +1009,11 @@ export const Conditions: {[cond: string]: Condition} = Object.freeze({
 		filterGt: notSupported,
 		filterGte: notSupported
 	},
-	temptation_count: noopImmediate,
+	temptation_count: immediate({
+		filterEq(regions: RegionList, n: number, _0: CourseData, _1: HorseParameters, extra: RaceParameters) {
+			return [regions, (s: RaceState) => +s.hasBeenRushed == n] as [RegionList, DynamicCondition];
+		}
+	}),
 	temptation_count_behind: noopSectionRandom(2,9),
 	temptation_count_infront: noopSectionRandom(2,9),
 	time: valueFilter((_0: CourseData, _1: HorseParameters, extra: RaceParameters) => extra.time),
