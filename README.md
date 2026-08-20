@@ -52,9 +52,9 @@ Upstream's original bug report: because only one region is selected as the trigg
 
 This fork's `accumulatetime` handling (`ActivationConditions.ts`) statically trims regions to an estimated arrival window (`0.85 * baseSpeed * t`) applied uniformly, with no exemption list for affected skills — the same general shape of issue upstream described is plausibly still present here, but the specific skill list from upstream's README (ウマ好み/ウママニア, 先頭プライド/トップランナー, etc.) hasn't been re-verified against this fork's current condition set and isn't repeated here as fact. Worth checking against `mackoz/uma-tools`'s `plans/engine-comparison/skills.md#skl-2` before relying on either the old list or the assumption that it's fixed.
 
-## Downhill mode and kakari (rushed) are implemented, not planned
+## Downhill mode and Rushed are implemented, not planned
 
-Upstream's original "Not yet implemented" list included downhill speedup mode and kakari — both **are implemented** in this fork (`downhillCheck()`/`isDownhillMode` in `RaceSolver.ts`, wisdom-gated per the doc's `WizStat * 0.04%` roll; `isRushed`/`rushedSection` for kakari, including the doc's 2–9 section range and the 自制心 skill exception).
+Upstream's original "Not yet implemented" list included downhill speedup mode and kakari (掛かり) — both **are implemented** in this fork (`downhillCheck()`/`isDownhillMode` in `RaceSolver.ts`, wisdom-gated per the doc's `WizStat * 0.04%` roll; `isRushed`/`rushedSection` for the state Global calls "Rushed," including the doc's 2–9 section range and the 自制心 skill exception). The skill-condition layer is wired to this state too — `is_temptation`/`temptation_count` read real `isRushed`/`hasBeenRushed` values instead of no-op'ing (they used to, despite the state machine existing). A related naming bug is also fixed: 4 skills use a condition literally named `running_style_temptation_opponent_count_*`, which this fork (and upstream B) had registered without "opponent" — that mismatch crashed skill-build for any of those 4; renamed to match, still a mocked value pending real multi-uma opponent tracking.
 
 ## Scaling effects are not implemented
 
