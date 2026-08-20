@@ -132,6 +132,8 @@ export interface RaceState {
 	readonly usedSkills: ReadonlySet<string>
 	readonly leadCompetition: boolean
 	readonly posKeepStrategy: Strategy
+	readonly isRushed: boolean
+	readonly hasBeenRushed: boolean
 }
 
 export type DynamicCondition = (state: RaceState) => boolean;
@@ -908,7 +910,9 @@ export class RaceSolver {
 						if (this.activeTargetSpeedSkills.length == 0 && this.activeCurrentSpeedSkills.length == 0) {
 							this.positionKeepState = PositionKeepState.PaceDown;
 							this.positionKeepActivations.push([this.pos, 0, PositionKeepState.PaceDown]);
-							this.posKeepExitDistance = this.posKeepRng.random() * (this.posKeepMaxThreshold - this.posKeepMinThreshold) + this.posKeepMinThreshold;
+							// after 1.5 anniversary, the exit-roll max is replaced with lerp(min,max,0.5) in mid-race
+							const paceDownMax = this.phase == 1 ? this.posKeepMinThreshold + 0.5 * (this.posKeepMaxThreshold - this.posKeepMinThreshold) : this.posKeepMaxThreshold;
+							this.posKeepExitDistance = this.posKeepRng.random() * (paceDownMax - this.posKeepMinThreshold) + this.posKeepMinThreshold;
 						}
 					}
 				}
@@ -1010,7 +1014,7 @@ export class RaceSolver {
 				this.posKeepSpeedCoef = 1.04;
 				break;
 			case PositionKeepState.PaceDown:
-				this.posKeepSpeedCoef = 0.915; // 0.945x in mid-race post 1st-anniversary
+				this.posKeepSpeedCoef = this.phase == 1 ? 0.945 : 0.915;
 				break;
 			default:
 				this.posKeepSpeedCoef = 1.0;
