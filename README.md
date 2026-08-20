@@ -2,10 +2,12 @@
 
 Tools and libraries for simulating races in ウマ娘 プリティーダービー and analyzing skill effects. See the readme in the tools/ folder for usage of the command-line tools.
 
+**This is [`mackoz/uma-skill-tools`](https://github.com/mackoz/uma-skill-tools), a fork of [`alpha123/uma-skill-tools`](https://github.com/alpha123/uma-skill-tools)** — it's the engine submodule for [`mackoz/uma-tools`](https://github.com/mackoz/uma-tools) (a browser-based race simulator built on top of this library), referenced the same way `alpha123/uma-tools` references the upstream engine. Most of what's different from upstream here was imported from [`Werseter/uma-skill-tools@kachi`](https://github.com/Werseter/uma-skill-tools/tree/kachi) — see [`mackoz/uma-tools`'s `plans/engine-comparison/forks.md`](https://github.com/mackoz/uma-tools-plans/blob/main/engine-comparison/forks.md) for the detailed comparison and attribution this README doesn't try to duplicate.
+
 Setup:
 
 ```
-git clone https://github.com/alpha123/uma-skill-tools.git
+git clone https://github.com/mackoz/uma-skill-tools.git
 cd uma-skill-tools
 npm install --dev
 ```
@@ -34,67 +36,41 @@ The sample policy associated with a condition is more of just a default and tech
 
 # Caveats
 
-## Does not fully simulate a race, only simulates one uma
+Upstream's original README described a deliberately narrower engine than this fork now is — several of its caveats no longer apply here and are corrected below. Where a caveat is now false, the "why" behind the original design choice is kept (it's still useful context for *why* upstream is architected the way it is), with a note on what this fork actually does instead.
 
-This is by design. The intention is to determine the distance gain of skills which requires as controlled of an environment as possible. Trying to simulate a full race with other umas makes it too difficult to isolate the effects of a single skill.
+## Whole-field simulation, position keep, and lane changes
 
-This has a lot of secondary effects. Many skill conditions involve other umas in some way. Those conditions are instead modeled by probability distributions based mainly on guessing where they tend to activate.
+Upstream's original design point: simulating one uma in isolation, with other umas' conditions modeled as probability distributions, keeps the environment controlled enough to isolate a single skill's distance gain — full multi-uma simulation makes that isolation harder. That's still upstream's tradeoff.
 
-### Position keep
+**This fork doesn't make that tradeoff.** It simulates the whole field (`initUmas()`, a `RaceSolver[]` per uma, `getPacer()` re-electing the pacemaker every frame — from `Werseter/uma-skill-tools@kachi`), with a real 5-state position-keep machine (`PositionKeepState {None, PaceUp, PaceDown, SpeedUp, Overtake}`, not just pace-down-at-the-start), real lane-change movement (`applyLaneMovement()`, `LaneMovementSpeed`/`ChangeLane` skill types), and real lead-competition/dueling mechanics (`updateCompeteFight()`/`updateLeadCompetition()`). `order`/`order_rate` conditions are evaluated against the actual simulated field rather than assumed always-satisfied.
 
-Due to obviously involving other umas, position keep is mostly not simulated except for pace down for non-runners at the beginning of a race. In this case the pace down is fairly predictable and has effects on the efficiency of certain skills, so it is simulated.
+Many multi-uma-dependent conditions still can't be simulated literally even with a full field (things like real overtake-mode targeting still need actual multi-uma race-replay data this engine doesn't have) — those remain modeled by runtime Markov-chain approximations (`ApproximateConditions.ts`, `SpecialConditions.ts`) rather than static pre-race probability distributions, which is a different approximation strategy than upstream's, not a return to upstream's static-stub approach.
 
-Runner speed up mode/overtake mode is probably relatively predictable early in the race and may be implemented in the future.
+## Skills that combine `accumulatetime` with a condition modeled by a probability distribution may still activate too early
 
-### Order conditions
+Upstream's original bug report: because only one region is selected as the trigger, if the dynamic condition isn't satisfied there the skill fails to activate even though it would have in a later region — so these skills tend to activate right after the `accumulatetime` threshold is met, more often than the modeled distribution predicts.
 
-Obviously since no other umas exist conditions like order, order_rate, etc are meaningless. By default these are assumed to always be fulfilled, which I think is the expected behavior in most cases since you only really care about things like angling, anabolic, etc activating immediately. It's possible to use one of the random sample policies with these anyway, which may be useful for modeling anabolic+gear combo or something.
+This fork's `accumulatetime` handling (`ActivationConditions.ts`) statically trims regions to an estimated arrival window (`0.85 * baseSpeed * t`) applied uniformly, with no exemption list for affected skills — the same general shape of issue upstream described is plausibly still present here, but the specific skill list from upstream's README (ウマ好み/ウママニア, 先頭プライド/トップランナー, etc.) hasn't been re-verified against this fork's current condition set and isn't repeated here as fact. Worth checking against `mackoz/uma-tools`'s `plans/engine-comparison/skills.md#skl-2` before relying on either the old list or the assumption that it's fixed.
 
-## Does not take inner/outer lane differences into account
+## Downhill mode and kakari (rushed) are implemented, not planned
 
-It's kind of pointless to try to simulate lane changing because it's both too random and too dependent on other umas. The difference in distance traveled between inner and outer lanes can be quite significant, but probably doesn't affect the efficiency of skills that much.
+Upstream's original "Not yet implemented" list included downhill speedup mode and kakari — both **are implemented** in this fork (`downhillCheck()`/`isDownhillMode` in `RaceSolver.ts`, wisdom-gated per the doc's `WizStat * 0.04%` roll; `isRushed`/`rushedSection` for kakari, including the doc's 2–9 section range and the 自制心 skill exception).
 
-## Skills that combine accumulatetime with a condition modeled by a probability distribution activate too early a lot of the time
+## Scaling effects are not implemented
 
-This is a bug but somewhat hard to fix with the current architecture. Basically, they activate immediately after the accumulatetime condition is satisfied more than would be predicted by the distribution used to model them. Fixing this is kind of non-trivial and in practice I think it's not really that important.
+Still true. The doc's value-scaling (1–25), duration-scaling (1–7), and skill-level (1–10) tables aren't modeled — the per-skill values used are whatever the data pipeline extracted for whatever level/scaling state that data happens to reflect, not a selectable parameter.
 
-List of skills affected:
+## Skill cooldowns
 
-- ウマ好み / ウママニア
-- 先頭プライド / トップランナー
-- 遊びはおしまいっ！ / お先に失礼っ！
-- スリップストリーム
-- 負けん気 / 姉御肌
-- 砂浴び○ / 優雅な砂浴び
-- possibly others
-
-## Not yet implemented
-
-All of these things should be doable with the current architecture and are planned for the near future.
-
-### Does not simulate downhill speedup mode
-
-The architecture now allows it to be doable in a way to usefully allow comparisons even though the effects are random.
-
-### Does not simulate kakari
-
-Easily doable but no real point without tracking hp consumption since both simulations would always kakari at the same point during a comparison.
-
-If it is implemented would probably have the effect of increasing int decreasing average バ身 gain due to less kakari, since position keep effects aren't simulated which would otherwise counteract it.
-
-### Scaling effects are not implemented yet
-
-Some of these are going to be a real pain.
-
-### Skill cooldowns
-
-At the moment skills can only activate once and skills with a cooldown (like 弧線のプロフェッサー or ハヤテ一文字) only activate once. This is hard to implement without some relatively major organizational changes (currently pending).
+Still true. Skills can only activate once per simulated race; skills with an in-game cooldown (弧線のプロフェッサー, ハヤテ一文字, etc.) aren't re-triggered.
 
 # Credit
 
 English skill names are from [GameTora](https://gametora.com/umamusume).
 
 KuromiAK#4505 on Discord let me hassle him about various minutiae of game mechanics.
+
+Multi-uma simulation, position keep, lane movement, and lead competition/dueling are from [Werseter/uma-skill-tools](https://github.com/Werseter/uma-skill-tools) (the `kachi` branch), imported here to bring this fork's engine in line with what [`mackoz/uma-tools`](https://github.com/mackoz/uma-tools) actually runs.
 
 # License
 
