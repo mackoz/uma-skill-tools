@@ -383,14 +383,15 @@ function orderOutFilter(rate: number) {
 }
 
 /*
-	accumulatetime, activate_count_all, activate_count_end_after, activate_count_heal, activate_count_middle, activate_count_start,
-	all_corner_random, always, bashin_diff_behind, bashin_diff_infront, behind_near_lane_time, behind_near_lane_time_set1, blocked_all_continuetime,
-	blocked_front, blocked_front_continuetime, blocked_side_continuetime, change_order_onetime, change_order_up_end_after,
+	accumulatetime, activate_count_all, activate_count_end_after, activate_count_heal, activate_count_later_half, activate_count_middle,
+	activate_count_start, all_corner_random, always, bashin_diff_behind, bashin_diff_infront, behind_near_lane_time, behind_near_lane_time_set1,
+	blocked_all_continuetime, blocked_front, blocked_front_continuetime, blocked_side_continuetime, change_order_onetime, change_order_up_end_after,
 	change_order_up_finalcorner_after, compete_fight_count, corner, corner_random, distance_diff_rate, distance_diff_top, distance_rate,
-	distance_rate_after_random, distance_type, down_slope_random, grade, ground_condition, ground_type, hp_per, infront_near_lane_time, is_badstart,
+	distance_rate_after_random, distance_type, down_slope_random, grade, ground_condition, ground_type, hp_per, infront_near_lane_time,
+	is_activate_any_skill, is_activate_other_skill_detail, is_badstart,
 	is_basis_distance, is_behind_in, is_exist_chara_id, is_finalcorner, is_finalcorner_laterhalf, is_finalcorner_random, is_hp_empty_onetime,
 	is_last_straight_onetime, is_lastspurt, is_move_lane, is_overtake, is_surrounded, is_temptation, lane_type, last_straight_random, near_count,
-	order, order_rate, order_rate_in20_continue, order_rate_in40_continue, order_rate_out40_continue, order_rate_out50_continue,
+	order, order_rate, order_rate_in20_continue, order_rate_in40_continue, order_rate_in50_continue, order_rate_out40_continue, order_rate_out50_continue,
 	order_rate_out70_continue, overtake_target_no_order_up_time, overtake_target_time, phase, phase_firsthalf_random, phase_laterhalf_random,
 	phase_random, popularity, post_number, random_lot, remain_distance, remain_distance_viewer_id, rotation, running_style,
 	running_style_count_nige_otherself, running_style_count_oikomi_otherself, running_style_count_same, running_style_count_same_rate,
@@ -432,6 +433,13 @@ export const Conditions: {[cond: string]: Condition} = Object.freeze({
 	activate_count_heal: immediate({
 		filterGte(regions: RegionList, n: number, _0: CourseData, _1: HorseParameters, extra: RaceParameters) {
 			return [regions, (s: RaceState) => s.activateCountHeal >= n] as [RegionList, DynamicCondition];
+		}
+	}),
+	// "You've activated the specified amount of skills in the second half of the race" — the race's own
+	// half (pos >= distance/2), not a per-phase half like phase_laterhalf_random.
+	activate_count_later_half: immediate({
+		filterGte(regions: RegionList, n: number, _0: CourseData, _1: HorseParameters, extra: RaceParameters) {
+			return [regions, (s: RaceState) => s.activateCountLaterHalf >= n] as [RegionList, DynamicCondition];
 		}
 	}),
 	activate_count_middle: immediate({
@@ -636,6 +644,12 @@ export const Conditions: {[cond: string]: Condition} = Object.freeze({
 		}
 	}),
 	infront_near_lane_time: noopErlangRandom(3, 2.0),
+	is_activate_any_skill: immediate({
+		filterEq(regions: RegionList, one: number, _0: CourseData, _1: HorseParameters, extra: RaceParameters) {
+			assert(one == 1, 'must be is_activate_any_skill==1');
+			return [regions, (s: RaceState) => s.activateCountLastFrame > 0] as [RegionList, DynamicCondition];
+		}
+	}),
 	is_activate_other_skill_detail: immediate({
 		filterEq(regions: RegionList, one: number, _0: CourseData, _1: HorseParameters, extra: RaceParameters) {
 			assert(one == 1, 'must be is_activate_other_skill_detail==1');
@@ -747,6 +761,22 @@ export const Conditions: {[cond: string]: Condition} = Object.freeze({
 		}
 	}),
 	lane_type: noopImmediate,
+	// "Picks a random point on the last straight" — same shape as phase_straight_random but without the
+	// phase bounds, and same last-straight lookup as is_last_straight/is_last_straight_onetime above.
+	last_straight_random: {
+		samplePolicy: StraightRandomPolicy,
+		filterEq(regions: RegionList, one: number, course: CourseData, _: HorseParameters, extra: RaceParameters) {
+			assert(one == 1, 'must be last_straight_random==1');
+			assert(CourseHelpers.isSortedByStart(course.straights), 'course straights must be sorted by start');
+			const lastStraight = course.straights[course.straights.length - 1];
+			return regions.rmap(r => r.intersect(lastStraight));
+		},
+		filterNeq: notSupported,
+		filterLt: notSupported,
+		filterLte: notSupported,
+		filterGt: notSupported,
+		filterGte: notSupported
+	},
 	lastspurt: immediate({
 		filterEq(regions: RegionList, case_: number, course: CourseData, _: HorseParameters, extra: RaceParameters) {
 			// NB. not entirely sure these are correct, based on some vague remarks made by kuromi once
@@ -774,6 +804,10 @@ export const Conditions: {[cond: string]: Condition} = Object.freeze({
 	order_rate: orderFilter((rate: number, numUmas: number) => Math.round(numUmas * (rate / 100.0))),
 	order_rate_in20_continue: orderInFilter(0.2),
 	order_rate_in40_continue: orderInFilter(0.4),
+	// NB. like its siblings, the "_continue" part (never worse than this rate since the first 5s) isn't
+	// modeled — orderInFilter only has the static, user-supplied extra.orderRange to check, not a real
+	// position history. Only the rounding rule ("nearest integer") is exact.
+	order_rate_in50_continue: orderInFilter(0.5),
 	order_rate_in80_continue: orderInFilter(0.8),
 	order_rate_out20_continue: orderOutFilter(0.2),
 	order_rate_out40_continue: orderOutFilter(0.4),

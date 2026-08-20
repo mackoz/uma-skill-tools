@@ -117,6 +117,8 @@ export interface RaceState {
 	readonly accumulatetime: Readonly<Timer>
 	readonly activateCount: readonly number[]
 	readonly activateCountHeal: number
+	readonly activateCountLastFrame: number
+	readonly activateCountLaterHalf: number
 	readonly currentSpeed: number
 	readonly isLastSpurt: boolean
 	readonly lastSpurtSpeed: number
@@ -270,6 +272,9 @@ export class RaceSolver {
 	hillEnd: number[]
 	activateCount: number[]
 	activateCountHeal: number
+	activateCountLastFrame: number
+	activateCountThisFrame: number
+	activateCountLaterHalf: number
 	onSkillActivate: (s: RaceSolver, skillId: string, perspective: Perspective) => void
 	onSkillDeactivate: (s: RaceSolver, skillId: string, perspective: Perspective) => void
 	sectionLength: number
@@ -422,6 +427,9 @@ export class RaceSolver {
 		this.activeChangeLaneSkills = [];
 		this.activateCount = [0,0,0];
 		this.activateCountHeal = 0;
+		this.activateCountLastFrame = 0;
+		this.activateCountThisFrame = 0;
+		this.activateCountLaterHalf = 0;
 		this.onSkillActivate = params.onSkillActivate || noop;
 		this.onSkillDeactivate = params.onSkillDeactivate || noop;
 		this.sectionLength = this.course.distance / 24.0;
@@ -1338,6 +1346,11 @@ export class RaceSolver {
 				}
 			}
 		}
+		// activateSkill() (called above, possibly re-entrantly via doActivateRandomGold) bumped
+		// activateCountThisFrame; is_activate_any_skill reads *last* frame's count, one frame delayed,
+		// same as every other phase-check-before-phase-update timing quirk in this engine.
+		this.activateCountLastFrame = this.activateCountThisFrame;
+		this.activateCountThisFrame = 0;
 	}
 
 	checkWisdomForSkill(skill: PendingSkill): boolean {
@@ -1439,6 +1452,13 @@ export class RaceSolver {
 			}
 		});
 		if (s.perspective == Perspective.Self) ++this.activateCount[this.phase];
+		// counted here (not just in the pendingSkills loop in processSkillActivations) so that
+		// doActivateRandomGold's re-entrant activateSkill() calls are counted too — "you have just
+		// used another skill" should include Adventure of 564's forced activations.
+		if (s.perspective == Perspective.Self && s.skillId != 'asitame' && s.skillId != 'staminasyoubu') {
+			++this.activateCountThisFrame;
+			if (this.pos >= this.course.distance / 2) ++this.activateCountLaterHalf;
+		}
 		this.usedSkills.add(s.skillId);
 		this.onSkillActivate(this, s.skillId, s.perspective);
 	}
