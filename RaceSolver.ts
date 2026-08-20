@@ -910,7 +910,9 @@ export class RaceSolver {
 						if (this.activeTargetSpeedSkills.length == 0 && this.activeCurrentSpeedSkills.length == 0) {
 							this.positionKeepState = PositionKeepState.PaceDown;
 							this.positionKeepActivations.push([this.pos, 0, PositionKeepState.PaceDown]);
-							this.posKeepExitDistance = this.posKeepRng.random() * (this.posKeepMaxThreshold - this.posKeepMinThreshold) + this.posKeepMinThreshold;
+							// after 1.5 anniversary, the exit-roll max is replaced with lerp(min,max,0.5) in mid-race
+							const paceDownMax = this.phase == 1 ? this.posKeepMinThreshold + 0.5 * (this.posKeepMaxThreshold - this.posKeepMinThreshold) : this.posKeepMaxThreshold;
+							this.posKeepExitDistance = this.posKeepRng.random() * (paceDownMax - this.posKeepMinThreshold) + this.posKeepMinThreshold;
 						}
 					}
 				}
