@@ -97,6 +97,65 @@ export abstract class DistributionRandomPolicy {
 	reconcileAllCornerRandom(other: ActivationSamplePolicy) { return other; }
 }
 
+const CENTRAL_LOWER_QUANTILE = 0.001;
+const CENTRAL_UPPER_QUANTILE = 0.999;
+
+function clampToCourseRange(value: number, lower: number, upper: number, courseRange: number): number {
+	if (!(upper > lower) || courseRange <= 0) {
+		return 0;
+	}
+	const normalized = Math.max(0, Math.min(1, (value - lower) / (upper - lower)));
+	return Math.min(courseRange * (1 - Number.EPSILON), courseRange * normalized);
+}
+
+// Acklam's inverse-normal approximation. Accuracy is ample for fixed 0.1%/99.9% bounds.
+function inverseStandardNormal(p: number): number {
+	const a = [-3.969683028665376e1, 2.209460984245205e2, -2.759285104469687e2, 1.38357751867269e2, -3.066479806614716e1, 2.506628277459239];
+	const b = [-5.447609879822406e1, 1.615858368580409e2, -1.556989798598866e2, 6.680131188771972e1, -1.328068155288572e1];
+	const c = [-7.784894002430293e-3, -3.223964580411365e-1, -2.400758277161838, -2.549732539343734, 4.374664141464968, 2.938163982698783];
+	const d = [7.784695709041462e-3, 3.224671290700398e-1, 2.445134137142996, 3.754408661907416];
+	const threshold = 0.02425;
+	if (p < threshold) {
+		const q = Math.sqrt(-2 * Math.log(p));
+		return (((((c[0] * q + c[1]) * q + c[2]) * q + c[3]) * q + c[4]) * q + c[5]) /
+			((((d[0] * q + d[1]) * q + d[2]) * q + d[3]) * q + 1);
+	}
+	if (p > 1 - threshold) {
+		return -inverseStandardNormal(1 - p);
+	}
+	const q = p - 0.5;
+	const r = q * q;
+	return (((((a[0] * r + a[1]) * r + a[2]) * r + a[3]) * r + a[4]) * r + a[5]) * q /
+		(((((b[0] * r + b[1]) * r + b[2]) * r + b[3]) * r + b[4]) * r + 1);
+}
+
+const erlangBounds = new Map<string, [number, number]>();
+
+function erlangCdf(x: number, k: number, lambda: number): number {
+	const lx = lambda * x;
+	let term = 1;
+	let sum = 1;
+	for (let i = 1; i < k; ++i) {
+		term *= lx / i;
+		sum += term;
+	}
+	return 1 - Math.exp(-lx) * sum;
+}
+
+function erlangQuantile(p: number, k: number, lambda: number): number {
+	let lower = 0;
+	let upper = Math.max(1 / lambda, k / lambda);
+	while (erlangCdf(upper, k, lambda) < p) {
+		upper *= 2;
+	}
+	for (let i = 0; i < 80; ++i) {
+		const middle = (lower + upper) / 2;
+		if (erlangCdf(middle, k, lambda) < p) lower = middle;
+		else upper = middle;
+	}
+	return (lower + upper) / 2;
+}
+
 export class UniformRandomPolicy extends DistributionRandomPolicy {
 	constructor() { super(); }
 
@@ -114,7 +173,7 @@ export class LogNormalRandomPolicy extends DistributionRandomPolicy {
 
 	distribution(upper: number, nsamples: number, rng: PRNG) {
 		// see <https://en.wikipedia.org/wiki/Box%E2%80%93Muller_transform>
-		let nums = [], min = Infinity, max = 0.0;
+		const nums = [];
 		const halfn = Math.ceil(nsamples / 2);
 		for (let i = 0; i < halfn; ++i) {
 			let x, y, r2;
@@ -126,12 +185,11 @@ export class LogNormalRandomPolicy extends DistributionRandomPolicy {
 			const m = Math.sqrt(-2.0 * Math.log(r2) / r2) * this.sigma;
 			const a = Math.exp(x * m + this.mu);
 			const b = Math.exp(y * m + this.mu);
-			min = Math.min(min, a, b);
-			max = Math.max(max, a, b);
 			nums.push(a,b);
 		}
-		const range = max - min;
-		return nums.map(n => Math.floor(upper * (n - min) / range));
+		const lower = Math.exp(this.mu + this.sigma * inverseStandardNormal(CENTRAL_LOWER_QUANTILE));
+		const high = Math.exp(this.mu + this.sigma * inverseStandardNormal(CENTRAL_UPPER_QUANTILE));
+		return nums.slice(0, nsamples).map(n => clampToCourseRange(n, lower, high, upper));
 	}
 }
 
@@ -140,23 +198,24 @@ export class ErlangRandomPolicy extends DistributionRandomPolicy {
 
 	distribution(upper: number, nsamples: number, rng: PRNG) {
 		const nums = [];
-		let min = Infinity, max = 0.0;
 		for (let i = 0; i < nsamples; ++i) {
 			let u = 1.0;
 			for (let j = 0; j < this.k; ++j) {
 				u *= rng.random();
 			}
 			const n = -Math.log(u) / this.lambda;
-			min = Math.min(min, n);
-			max = Math.max(max, n);
 			nums.push(n);
 		}
-		if (nsamples == 1) {
-			const scale = 18;
-			return nums.map(n => Math.floor(upper * Math.min(n / scale, 1.0)));
+		const cacheKey = `${this.k}:${this.lambda}`;
+		let bounds = erlangBounds.get(cacheKey);
+		if (bounds == null) {
+			bounds = [
+				erlangQuantile(CENTRAL_LOWER_QUANTILE, this.k, this.lambda),
+				erlangQuantile(CENTRAL_UPPER_QUANTILE, this.k, this.lambda)
+			];
+			erlangBounds.set(cacheKey, bounds);
 		}
-		const range = max - min;
-		return nums.map(n => Math.floor(upper * (n - min) / range));
+		return nums.map(n => clampToCourseRange(n, bounds[0], bounds[1], upper));
 	}
 }
 
