@@ -396,7 +396,7 @@ export class RaceSolverBuilder {
 	_pacerSkillIds: string[]
 	_pacerSpeedUpRate: number
 	_pacerSkillData: SkillData[];
-	_pacerTriggers: Region[][];
+	_pacerTriggersBySlot: Region[][][];
 	_rng: SeededRng
 	_seed: number
 	_parser: {parse: any, tokenize: any}
@@ -433,7 +433,7 @@ export class RaceSolverBuilder {
 		};
 		this._horse = null;
 		this._pacerSkillData = [];
-		this._pacerTriggers = [];
+		this._pacerTriggersBySlot = [];
 		this._pacerSkills = [];
 		this._pacerSkillIds = [];
 		this._pacerSpeedUpRate = 100;
@@ -558,37 +558,45 @@ export class RaceSolverBuilder {
 		return pacerHorse
 	}
 
-	setupPacerSkillTriggers(pacerRng: SeededRng) {
-		const wholeCourse = new RegionList();
-		wholeCourse.push(new Region(0, this._course.distance));
-		Object.freeze(wholeCourse);
+	// Samples each pacer skill's full nsamples-length trigger table once per pacemaker slot,
+	// instead of buildPacer resampling the whole table on every scenario (only to use one
+	// index of it) -- that was an O(nsamples) cost paid nsamples times per pacemaker, i.e.
+	// quadratic in the sample count. Slots exist because a single pacer skill config
+	// (_pacerSkillData) can back multiple simultaneous pacemakers (Virtual position-keep with
+	// pacemakerCount > 1), each of which should still see distinct trigger positions.
+	//
+	// Idempotent for a given (baseSeed, pacerSlots): call once before the scenario loop.
+	prepPacerTriggers(pacerSlots: number, baseSeed: number) {
+		this._pacerTriggersBySlot = [];
 
-		let pacerTriggers: Region[][] = [];
-		
-		if (this._pacerSkillIds.length > 0) {
-			const triggerSeed = pacerRng.int32();
-			const occurrences = new Map<string, number>();
-			pacerTriggers = this._pacerSkillData.map(sd => {
-				const key = sd.perspective != null ? this.getSamplePolicyKey(sd.skillId, sd.perspective) : sd.skillId;
-				const occurrence = occurrences.get(key) || 0;
-				occurrences.set(key, occurrence + 1);
-				const sp = this._samplePolicyOverride.get(key) || sd.samplePolicy;
-				return sp.sample(sd.regions, this.nsamples, new Rule30CARng(deriveSeed(triggerSeed, `${key}:${occurrence}`)));
-			});
+		for (let slot = 0; slot < pacerSlots; ++slot) {
+			let pacerTriggers: Region[][] = [];
+
+			if (this._pacerSkillIds.length > 0) {
+				const triggerSeed = deriveSeed(baseSeed, `pacer-triggers:${slot}`);
+				const occurrences = new Map<string, number>();
+				pacerTriggers = this._pacerSkillData.map(sd => {
+					const key = sd.perspective != null ? this.getSamplePolicyKey(sd.skillId, sd.perspective) : sd.skillId;
+					const occurrence = occurrences.get(key) || 0;
+					occurrences.set(key, occurrence + 1);
+					const sp = this._samplePolicyOverride.get(key) || sd.samplePolicy;
+					return sp.sample(sd.regions, this.nsamples, new Rule30CARng(deriveSeed(triggerSeed, `${key}:${occurrence}`)));
+				});
+			}
+
+			this._pacerTriggersBySlot.push(pacerTriggers);
 		}
-
-		this._pacerTriggers = pacerTriggers;
 	}
 
-	buildPacer(pacerHorse, i: number, pacerRng: SeededRng): RaceSolver | null {
-		this.setupPacerSkillTriggers(pacerRng);
+	buildPacer(pacerHorse, i: number, slot: number, pacerRng: SeededRng): RaceSolver | null {
+		const pacerTriggers = this._pacerTriggersBySlot[slot] || [];
 
 		const pacerSkills = this._pacerSkillData.length > 0
 			? this._pacerSkillData.map((sd, sdi) => ({
 				skillId: sd.skillId,
 				perspective: sd.perspective,
 				rarity: sd.rarity,
-				trigger: this._pacerTriggers[sdi][i % this._pacerTriggers[sdi].length],
+				trigger: pacerTriggers[sdi][i % pacerTriggers[sdi].length],
 				extraCondition: sd.extraCondition,
 				effects: sd.effects
 			}))
@@ -807,7 +815,7 @@ export class RaceSolverBuilder {
 		clone._pacerSkillIds = this._pacerSkillIds.slice();
 		clone._pacerSpeedUpRate = this._pacerSpeedUpRate;
 		clone._pacerSkillData = this._pacerSkillData.slice();
-		clone._pacerTriggers = this._pacerTriggers.slice();
+		clone._pacerTriggersBySlot = this._pacerTriggersBySlot.slice();
 		clone.seed(this._seed);
 		clone._parser = this._parser;
 		clone._skills = this._skills.slice();
