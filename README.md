@@ -35,6 +35,10 @@ Each skill condition has an associated *sample policy* such as immediate, random
 
 The sample policy associated with a condition is more of just a default and technically the output of any condition tree can be sampled with any sample policy. This is intended to allow the user some choice in how certain conditions are modeled, since the sample policy is what controls where a given skill is "likely" to activate.
 
+# Decision records
+
+Significant design decisions — modeling approximations, numeric-output-affecting choices, failure-handling posture — are recorded as ADRs in [`docs/adr/`](docs/adr/README.md), including reconstructed rationale for decisions inherited from upstream and the kachi lineage. If you're about to "fix" something surprising (the RNG shim, the probability stand-ins for field conditions, the loud unknown-condition errors), read the matching record first; if you're about to make a decision like that, add one.
+
 # Behavior notes
 
 ## Whole-field simulation, position keep, and lane changes
