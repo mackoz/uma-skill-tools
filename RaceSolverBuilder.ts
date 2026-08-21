@@ -1,7 +1,7 @@
 import { HorseParameters, Strategy, Aptitude } from './HorseTypes';
 import { CourseData, CourseHelpers, DistanceType } from './CourseData';
 import { Region, RegionList } from './Region';
-import { Rule30CARng, SeededRng } from './Random';
+import { deriveSeed, Rule30CARng, SeededRng } from './Random';
 import { Conditions, random, immediate, noopRandom } from './ActivationConditions';
 import { ActivationSamplePolicy, ImmediatePolicy } from './ActivationSamplePolicy';
 import { getParser } from './ConditionParser';
@@ -566,10 +566,14 @@ export class RaceSolverBuilder {
 		let pacerTriggers: Region[][] = [];
 		
 		if (this._pacerSkillIds.length > 0) {
+			const triggerSeed = pacerRng.int32();
+			const occurrences = new Map<string, number>();
 			pacerTriggers = this._pacerSkillData.map(sd => {
 				const key = sd.perspective != null ? this.getSamplePolicyKey(sd.skillId, sd.perspective) : sd.skillId;
+				const occurrence = occurrences.get(key) || 0;
+				occurrences.set(key, occurrence + 1);
 				const sp = this._samplePolicyOverride.get(key) || sd.samplePolicy;
-				return sp.sample(sd.regions, this.nsamples, pacerRng);
+				return sp.sample(sd.regions, this.nsamples, new Rule30CARng(deriveSeed(triggerSeed, `${key}:${occurrence}`)));
 			});
 		}
 
@@ -828,7 +832,7 @@ export class RaceSolverBuilder {
 
 	*build() {
 		let horse = buildBaseStats(this._horse, this._horse.mood);
-		let skillRng = new Rule30CARng(this._rng.int32());
+		const skillTriggerSeed = this._rng.int32();
 
 		const wholeCourse = new RegionList();
 		wholeCourse.push(new Region(0, this._course.distance));
@@ -837,10 +841,13 @@ export class RaceSolverBuilder {
 		const makeSkill = buildSkillData.bind(null, horse, this._raceParams, this._course, wholeCourse, this._parser);
 		const skilldata = this._skills.flatMap(({id,p}) => makeSkill(id, p));
 		this._extraSkillHooks.forEach(h => h(skilldata, horse, this._course));
+		const occurrences = new Map<string, number>();
 		const triggers = skilldata.map(sd => {
 			const key = sd.perspective != null ? this.getSamplePolicyKey(sd.skillId, sd.perspective) : sd.skillId;
+			const occurrence = occurrences.get(key) || 0;
+			occurrences.set(key, occurrence + 1);
 			const sp = this._samplePolicyOverride.get(key) || sd.samplePolicy;
-			return sp.sample(sd.regions, this.nsamples, skillRng)
+			return sp.sample(sd.regions, this.nsamples, new Rule30CARng(deriveSeed(skillTriggerSeed, `${key}:${occurrence}`)))
 		});
 
 		// must come after skill activations are decided because conditions like base_power depend on base stats
