@@ -1,8 +1,14 @@
+# Command status
+
+Run TypeScript tools through the repository-local dependency, for example `npx ts-node tools/skillgrep.ts --help` from the repo root (or `npx ts-node skillgrep.ts --help` from this directory).
+
+At commit `f6fb9d0`, `skillgrep.ts` and `compare.ts` compile and show their help normally. `gain.ts`, `dump.ts`, and `speedguts.ts` are currently blocked before execution by pre-existing TypeScript/API drift: the first two still construct `RaceSolver` with the removed `pacer` property, `dump.ts` also references removed pacing fields, and `speedguts.ts` reaches the dangling `EnhancedHpPolicy` import through `RaceSolverBuilder`. Their sections below document the intended interfaces, but those commands need code repair before they can be used. See `../CLAUDE.md` for the complete 14-error typecheck baseline.
+
 # skillgrep.ts
 
 Search skills by name or condition. For conditions it may be either just a condition name (e.g. phase_random) or a full condition specification with & and/or @. Order doesn't matter, so phase_random==1&running_style==3 matches running_style==3&phase_random==1. Partial condition names don't work.
 
-Has a number of options controlling the output and what is searched. Run `ts-node skillgrep.ts --help` for a list.
+Has a number of options controlling the output and what is searched. Run `npx ts-node skillgrep.ts --help` for a list.
 
 Notably it searches conditions by default and you have to use the `-N` or `--name` option to search skill names. Unlike conditions names can be a partial match and can be given in English or Japanese. Romanized Japanese does not match.
 
@@ -19,7 +25,7 @@ Has a fairly large number of options, but the most important are:
 - `--nsamples <integer>` Number of times to simulate races. Min/max/median/mean バ身 gain is reported from the results. Defaults to 500. You may want to increase it if you're comparing multiple random skills at once, to try to cover more pairs of random activation points. The simulator is relatively fast.
 - `--dump` Intended to be piped into histogram.py to show a histogram of バ身 gain instead of just reporting a summary.
 
-Run `ts-node gain.ts --help` for a full list.
+Once its API drift is repaired, run `npx ts-node gain.ts --help` for a full list.
 
 Any skills you want both simulations to have should be specified in the uma definition file. There is a default file for each strategy:
 
@@ -42,7 +48,7 @@ gain.ts output includes the lines `min configuration: ` and `max configuration: 
 
 Takes two uma definition files and runs simulations with each of them to compare the results.
 
-This is intended for comparisons that can't be made with gain.ts, for example comparing ums with different stats or comparing completely different sets of skills. Run `ts-node compare.ts --help` for options, but they're mostly the same as gain.ts.
+This is intended for comparisons that can't be made with gain.ts, for example comparing umas with different stats or comparing completely different sets of skills. Run `npx ts-node compare.ts --help` for options, but they're mostly the same as gain.ts.
 
 # plot.py
 

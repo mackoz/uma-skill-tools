@@ -9,10 +9,11 @@ Setup:
 ```
 git clone https://github.com/mackoz/uma-skill-tools.git
 cd uma-skill-tools
-npm install --dev
+npm install
+npm test
 ```
 
-This will install `ts-node`, which you can use to run the CLI tools.
+This installs `ts-node` and runs the currently wired condition-parser property test. See `CLAUDE.md` and `tools/README.md` for the standalone typecheck and the current status of the older CLI tools.
 
 Charting features require Python and matplotlib.
 
