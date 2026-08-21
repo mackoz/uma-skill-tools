@@ -1,7 +1,7 @@
 # ADR-0002: Field-dependent skill conditions are probability stand-ins, not geometry
 
 **Status:** Inherited (rationale reconstructed)
-**Date recorded:** 2026-08-21 (mechanism inherited via the kachi-lineage import, `9c0652a`; the distribution-modeled conditions predate that in upstream)
+**Date recorded:** 2026-08-21 (mechanism inherited via the kachi-lineage import, `9c0652a`; the distribution-modeled conditions predate that in alpha123's engine)
 
 ## Context
 
@@ -18,7 +18,7 @@ Field-dependent conditions are answered by probability models instead of geometr
 
 - **Real geometry** — requires ADR-0001 to go the other way; not available in this scope.
 - **Always-true / always-false stubs** — strictly worse: they make conditional skills either free or worthless, which biases exactly the comparisons this engine exists to make. A probability model at least spreads activations plausibly.
-- **Dynamic modeling via a Poisson process** — upstream's own aspiration, recorded in `ActivationSamplePolicy.ts` (comment by the upstream author, 2023): reconciling two distribution-modeled conditions "should be the joint probability distribution … but that is too complex to implement", and "eventually we'd like to model most of the conditions that use DistributionRandomPolicy with dynamic conditions using a Poisson process or something, which would make this obsolete (this would also enable other features like cooldowns for distribution-random skills)." Never built, here or upstream.
+- **Dynamic modeling via a Poisson process** — alpha123's own aspiration, recorded in `ActivationSamplePolicy.ts` (comment by alpha123, 2023): reconciling two distribution-modeled conditions "should be the joint probability distribution … but that is too complex to implement", and "eventually we'd like to model most of the conditions that use DistributionRandomPolicy with dynamic conditions using a Poisson process or something, which would make this obsolete (this would also enable other features like cooldowns for distribution-random skills)." Never built, here or in alpha123's engine.
 
 ## Consequences
 

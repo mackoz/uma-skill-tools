@@ -2,7 +2,7 @@
 
 Tools and libraries for simulating races in ウマ娘 プリティーダービー and analyzing skill effects. See the readme in the tools/ folder for usage of the command-line tools.
 
-**This is [`mackoz/uma-skill-tools`](https://github.com/mackoz/uma-skill-tools), a fork of [`alpha123/uma-skill-tools`](https://github.com/alpha123/uma-skill-tools)** — it's the engine submodule for [`mackoz/uma-tools`](https://github.com/mackoz/uma-tools) (a browser-based race simulator built on top of this library), referenced the same way `alpha123/uma-tools` references the upstream engine.
+**This is [`mackoz/uma-skill-tools`](https://github.com/mackoz/uma-skill-tools), a fork of [`alpha123/uma-skill-tools`](https://github.com/alpha123/uma-skill-tools)** — it's the engine submodule for [`mackoz/uma-tools`](https://github.com/mackoz/uma-tools) (a browser-based race simulator built on top of this library), referenced the same way `alpha123/uma-tools` references `alpha123/uma-skill-tools`.
 
 Setup:
 
@@ -37,7 +37,7 @@ The sample policy associated with a condition is more of just a default and tech
 
 # Decision records
 
-Significant design decisions — modeling approximations, numeric-output-affecting choices, failure-handling posture — are recorded as ADRs in [`docs/adr/`](docs/adr/README.md), including reconstructed rationale for decisions inherited from upstream and the kachi lineage. If you're about to "fix" something surprising (the RNG shim, the probability stand-ins for field conditions, the loud unknown-condition errors), read the matching record first; if you're about to make a decision like that, add one.
+Significant design decisions — modeling approximations, numeric-output-affecting choices, failure-handling posture — are recorded as ADRs in [`docs/adr/`](docs/adr/README.md), including reconstructed rationale for decisions inherited from alpha123 and the kachi lineage. If you're about to "fix" something surprising (the RNG shim, the probability stand-ins for field conditions, the loud unknown-condition errors), read the matching record first; if you're about to make a decision like that, add one.
 
 # Behavior notes
 

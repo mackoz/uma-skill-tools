@@ -4,7 +4,7 @@ This directory records the *why* behind this engine's significant decisions — 
 
 ## When to write one
 
-Write an ADR when a change settles a question that could reasonably have gone another way: a modeling approximation, a numeric-output-affecting design, a deliberate deviation from upstream or from the game, a failure-handling posture. Small fixes and refactors don't need one. If a change *reverses* a recorded decision, don't rewrite history — add a dated **Amendment** to the old record (or mark it Superseded and write a new one).
+Write an ADR when a change settles a question that could reasonably have gone another way: a modeling approximation, a numeric-output-affecting design, a deliberate deviation from alpha123 or from the game, a failure-handling posture. Small fixes and refactors don't need one. If a change *reverses* a recorded decision, don't rewrite history — add a dated **Amendment** to the old record (or mark it Superseded and write a new one).
 
 ## Format
 
@@ -13,7 +13,7 @@ Each record: **Status** · **Date** · **Context** (the problem and its constrai
 Statuses:
 - **Accepted** — current, deliberate.
 - **Accepted — under reconsideration** — still current behavior, but evidence has accumulated against it; an amendment says what and why.
-- **Inherited (rationale reconstructed)** — the decision predates this fork (upstream or the kachi-lineage import); the record reconstructs the likely rationale from code, comments, and history rather than first-hand knowledge. Treat the reconstruction as honest inference, not testimony.
+- **Inherited (rationale reconstructed)** — the decision predates this fork (alpha123 or the kachi-lineage import); the record reconstructs the likely rationale from code, comments, and history rather than first-hand knowledge. Treat the reconstruction as honest inference, not testimony.
 - **Superseded** — replaced; the record stays, pointing at its replacement.
 
 Numbers are never reused or renumbered, even if a record is retired — gaps are meaningful and retired records keep a tombstone entry here.
