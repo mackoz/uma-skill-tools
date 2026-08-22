@@ -2,7 +2,7 @@
 
 Tools and libraries for simulating races in ウマ娘 プリティーダービー and analyzing skill effects. See the readme in the tools/ folder for usage of the command-line tools.
 
-**This is [`mackoz/uma-skill-tools`](https://github.com/mackoz/uma-skill-tools), a fork of [`alpha123/uma-skill-tools`](https://github.com/alpha123/uma-skill-tools)** — it's the engine submodule for [`mackoz/uma-tools`](https://github.com/mackoz/uma-tools) (a browser-based race simulator built on top of this library), referenced the same way `alpha123/uma-tools` references the upstream engine. Most of what's different from upstream here was imported from [`Werseter/uma-skill-tools@kachi`](https://github.com/Werseter/uma-skill-tools/tree/kachi) — see [`mackoz/uma-tools`'s `plans/engine-comparison/forks.md`](https://github.com/mackoz/uma-tools-plans/blob/main/engine-comparison/forks.md) for the detailed comparison and attribution this README doesn't try to duplicate.
+**This is [`mackoz/uma-skill-tools`](https://github.com/mackoz/uma-skill-tools), a fork of [`alpha123/uma-skill-tools`](https://github.com/alpha123/uma-skill-tools)** — it's the engine submodule for [`mackoz/uma-tools`](https://github.com/mackoz/uma-tools) (a browser-based race simulator built on top of this library), referenced the same way `alpha123/uma-tools` references `alpha123/uma-skill-tools`.
 
 Setup:
 
@@ -35,43 +35,43 @@ Each skill condition has an associated *sample policy* such as immediate, random
 
 The sample policy associated with a condition is more of just a default and technically the output of any condition tree can be sampled with any sample policy. This is intended to allow the user some choice in how certain conditions are modeled, since the sample policy is what controls where a given skill is "likely" to activate.
 
-# Caveats
+# Decision records
 
-Upstream's original README described a deliberately narrower engine than this fork now is — several of its caveats no longer apply here and are corrected below. Where a caveat is now false, the "why" behind the original design choice is kept (it's still useful context for *why* upstream is architected the way it is), with a note on what this fork actually does instead.
+Significant design decisions — modeling approximations, numeric-output-affecting choices, failure-handling posture — are recorded as ADRs in [`docs/adr/`](docs/adr/README.md), including reconstructed rationale for decisions inherited from alpha123 and the kachi lineage. If you're about to "fix" something surprising (the RNG shim, the probability stand-ins for field conditions, the loud unknown-condition errors), read the matching record first; if you're about to make a decision like that, add one.
+
+# Behavior notes
 
 ## Whole-field simulation, position keep, and lane changes
 
-Upstream's original design point: simulating one uma in isolation, with other umas' conditions modeled as probability distributions, keeps the environment controlled enough to isolate a single skill's distance gain — full multi-uma simulation makes that isolation harder. That's still upstream's tradeoff.
+This engine simulates the whole field (`initUmas()`, a `RaceSolver[]` per uma, `getPacer()` re-electing the pacemaker every frame), with a real 5-state position-keep machine (`PositionKeepState {None, PaceUp, PaceDown, SpeedUp, Overtake}`), real lane-change movement (`applyLaneMovement()`, `LaneMovementSpeed`/`ChangeLane` skill types), and real lead-competition/dueling mechanics (`updateCompeteFight()`/`updateLeadCompetition()`). `order`/`order_rate` conditions are checked against a real placement rather than assumed always-satisfied — but that placement is still the fixed, user-supplied `extra.orderRange` (`orderFilter`/`orderInFilter`/`orderOutFilter`, `ActivationConditions.ts`), not a live read of the simulated field's actual standings each frame.
 
-**This fork doesn't make that tradeoff.** It simulates the whole field (`initUmas()`, a `RaceSolver[]` per uma, `getPacer()` re-electing the pacemaker every frame — from `Werseter/uma-skill-tools@kachi`), with a real 5-state position-keep machine (`PositionKeepState {None, PaceUp, PaceDown, SpeedUp, Overtake}`, not just pace-down-at-the-start), real lane-change movement (`applyLaneMovement()`, `LaneMovementSpeed`/`ChangeLane` skill types), and real lead-competition/dueling mechanics (`updateCompeteFight()`/`updateLeadCompetition()`). `order`/`order_rate` conditions are checked against a real placement rather than assumed always-satisfied — but that placement is still the fixed, user-supplied `extra.orderRange` (`orderFilter`/`orderInFilter`/`orderOutFilter`, `ActivationConditions.ts`), not a live read of the simulated field's actual standings each frame.
-
-Many multi-uma-dependent conditions still can't be simulated literally even with a full field (things like real overtake-mode targeting still need actual multi-uma race-replay data this engine doesn't have) — those remain modeled by runtime Markov-chain approximations (`ApproximateConditions.ts`, `SpecialConditions.ts`) rather than static pre-race probability distributions, which is a different approximation strategy than upstream's, not a return to upstream's static-stub approach.
+Many multi-uma-dependent conditions still can't be simulated literally even with a full field (things like real overtake-mode targeting still need actual multi-uma race-replay data this engine doesn't have) — those are modeled by runtime Markov-chain approximations (`ApproximateConditions.ts`, `SpecialConditions.ts`) rather than static pre-race probability distributions.
 
 ## Skills that combine `accumulatetime` with a condition modeled by a probability distribution may still activate too early
 
-Upstream's original bug report: because only one region is selected as the trigger, if the dynamic condition isn't satisfied there the skill fails to activate even though it would have in a later region — so these skills tend to activate right after the `accumulatetime` threshold is met, more often than the modeled distribution predicts.
+Because only one region is selected as the trigger, if the dynamic condition isn't satisfied there the skill fails to activate even though it would have in a later region — so these skills tend to activate right after the `accumulatetime` threshold is met, more often than the modeled distribution predicts.
 
-This fork's `accumulatetime` handling (`ActivationConditions.ts`) statically trims regions to an estimated arrival window (`0.85 * baseSpeed * t`) applied uniformly, with no exemption list for affected skills — the same general shape of issue upstream described is plausibly still present here, but the specific skill list from upstream's README (ウマ好み/ウママニア, 先頭プライド/トップランナー, etc.) hasn't been re-verified against this fork's current condition set and isn't repeated here as fact. Worth checking against `mackoz/uma-tools`'s `plans/engine-comparison/skills.md#skl-2` before relying on either the old list or the assumption that it's fixed.
+This engine's `accumulatetime` handling (`ActivationConditions.ts`) statically trims regions to an estimated arrival window (`0.85 * baseSpeed * t`) applied uniformly, with no exemption list for affected skills.
 
-## Downhill mode and kakari (Rushed) are implemented, not planned
+## Downhill mode and kakari (Rushed) are implemented
 
-Upstream's original "Not yet implemented" list included downhill speedup mode and kakari (掛かり, called "Rushed" in Global) — both **are implemented** in this fork (`downhillCheck()`/`isDownhillMode` in `RaceSolver.ts`, wisdom-gated per the doc's `WizStat * 0.04%` roll; `isRushed`/`rushedSection` for kakari, including the doc's 2–9 section range and the 自制心 skill exception). The skill-condition layer is wired to this state too — `is_temptation`/`temptation_count` read real `isRushed`/`hasBeenRushed` values instead of no-op'ing (they used to, despite the state machine existing). A related naming bug is also fixed: 4 skills use a condition literally named `running_style_temptation_opponent_count_*`, which this fork (and upstream B) had registered without "opponent" — that mismatch crashed skill-build for any of those 4; renamed to match, still a mocked value pending real multi-uma opponent tracking.
+Downhill speedup mode and kakari (掛かり, called "Rushed" in Global) are both implemented (`downhillCheck()`/`isDownhillMode` in `RaceSolver.ts`, wisdom-gated per a `WizStat * 0.04%` roll; `isRushed`/`rushedSection` for kakari, covering a 2–9 section range with a 自制心 skill exception). The skill-condition layer is wired to this state too — `is_temptation`/`temptation_count` read real `isRushed`/`hasBeenRushed` values instead of no-op'ing. A related naming bug is also fixed: 4 skills use a condition literally named `running_style_temptation_opponent_count_*`, which used to be registered without "opponent" — that mismatch crashed skill-build for any of those 4; renamed to match, still a mocked value pending real multi-uma opponent tracking.
 
 ## Unknown skill conditions now fail loudly, by name
 
 Same naming-mismatch bug class as the `running_style_temptation_opponent_count_*` fix above, but broader: `ConditionParser.ts`'s `Identifier.nud` used to resolve an unrecognized condition name to `undefined` with no bounds check, so the first comparison built against it (`new EqOperator(undefined, 1)`, etc.) threw `TypeError: Cannot read properties of undefined (reading 'samplePolicy')` at skill-build time — a real crash, not a no-op, for any shipped skill referencing a condition this engine doesn't register. It now throws a named `ParseError: unknown condition: <name>` instead, so the failure is diagnosable rather than a bare `TypeError` pointing at unrelated internals.
 
-Four condition names that were hitting exactly this crash are now real implementations instead of missing entirely: `is_activate_any_skill` (ported from upstream's `activateCountLastFrame`, extended here to also count skills forced via `doActivateRandomGold`/Adventure of 564, which upstream's version misses), `order_rate_in50_continue` (one-line addition to the existing `orderInFilter`/`orderOutFilter` family — same static-`orderRange` caveat as the rest of that family, see above), `last_straight_random` (built the same way as `phase_straight_random`/`is_last_straight`, just without the phase bounds), and `activate_count_later_half` (a new `activateCountLaterHalf` counter on `RaceState`, incremented for `pos >= course.distance / 2`). None of these exist upstream except `is_activate_any_skill`.
+Four condition names that were hitting exactly this crash are now real implementations instead of missing entirely: `is_activate_any_skill` (extended to also count skills forced via `doActivateRandomGold`/Adventure of 564), `order_rate_in50_continue` (one-line addition to the existing `orderInFilter`/`orderOutFilter` family — same static-`orderRange` caveat as the rest of that family, see above), `last_straight_random` (built the same way as `phase_straight_random`/`is_last_straight`, just without the phase bounds), and `activate_count_later_half` (a new `activateCountLaterHalf` counter on `RaceState`, incremented for `pos >= course.distance / 2`).
 
-Three condition names remain unregistered and will still throw the new named `ParseError` — `temptation_opponent_count_behind`/`temptation_opponent_count_infront` and `is_other_character_activate_advantage_skill` — along with roughly a dozen JP-only names (`furlong`, `is_abroad`, `run_at_full_speed_random`, etc.). See `mackoz/uma-tools`'s `plans/engine-comparison/skills.md` for the full list and which shipped skills each one affects, and `plans/condition-reference/conditions.md` for what an unfamiliar condition name in a `ParseError` actually means — a glossary of every condition string GameTora documents, cross-referenced against which ones this repo registers.
+Three condition names remain unregistered and will still throw the new named `ParseError` — `temptation_opponent_count_behind`/`temptation_opponent_count_infront` and `is_other_character_activate_advantage_skill` — along with roughly a dozen JP-only names (`furlong`, `is_abroad`, `run_at_full_speed_random`, etc.).
 
 ## Scaling effects are not implemented
 
-Still true. The doc's value-scaling (1–25), duration-scaling (1–7), and skill-level (1–10) tables aren't modeled — the per-skill values used are whatever the data pipeline extracted for whatever level/scaling state that data happens to reflect, not a selectable parameter.
+The value-scaling (1–25), duration-scaling (1–7), and skill-level (1–10) tables aren't modeled — the per-skill values used are whatever the data pipeline extracted for whatever level/scaling state that data happens to reflect, not a selectable parameter.
 
 ## Skill cooldowns
 
-Still true. Skills can only activate once per simulated race; skills with an in-game cooldown (弧線のプロフェッサー, ハヤテ一文字, etc.) aren't re-triggered.
+Skills can only activate once per simulated race; skills with an in-game cooldown (弧線のプロフェッサー, ハヤテ一文字, etc.) aren't re-triggered.
 
 # Credit
 

@@ -3,7 +3,7 @@ import { strict as assert } from 'node:assert';
 import { Strategy, Aptitude, HorseParameters, StrategyHelpers } from './HorseTypes';
 import { CourseData, CourseHelpers, Phase } from './CourseData';
 import { Region } from './Region';
-import { PRNG, Rule30CARng } from './Random';
+import { deriveSeed, PRNG, Rule30CARng } from './Random';
 import type { HpPolicy } from './HpPolicy';
 import { ApproximateCondition } from './ApproximateConditions';
 import { createBlockedSideCondition, createOvertakeCondition } from './SpecialConditions';
@@ -243,7 +243,8 @@ export class RaceSolver {
 	gorosiRng: PRNG
 	rushedRng: PRNG
 	downhillRng: PRNG[]
-	wisdomRollRng: PRNG
+	sectionSpeedRng: PRNG
+	skillWisdomSeed: number
 	posKeepRng: PRNG
 	laneMovementRng: PRNG
 	specialConditionRng: PRNG
@@ -400,7 +401,9 @@ export class RaceSolver {
 		this.syncRng = new Rule30CARng(this.rng.int32());
 		this.gorosiRng = new Rule30CARng(this.rng.int32());
 		this.rushedRng = new Rule30CARng(this.rng.int32());
-		this.wisdomRollRng = new Rule30CARng(this.rng.int32());
+		const wisdomSeed = this.rng.int32();
+		this.sectionSpeedRng = new Rule30CARng(wisdomSeed);
+		this.skillWisdomSeed = deriveSeed(wisdomSeed, 'skill-wisdom');
 		this.posKeepRng = new Rule30CARng(this.rng.int32());
 		this.laneMovementRng = new Rule30CARng(this.rng.int32());
 		this.specialConditionRng = new Rule30CARng(this.rng.int32());
@@ -538,7 +541,7 @@ export class RaceSolver {
 
 		this.sectionModifier = Array.from({length: 24}, () => {
 			const max = this.horse.wisdom / 5500.0 * Math.log10(this.horse.wisdom * 0.1);
-			const factor = (max - 0.65 + this.wisdomRollRng.random() * 0.65) / 100.0;
+			const factor = (max - 0.65 + this.sectionSpeedRng.random() * 0.65) / 100.0;
 			return baseSpeed(this.course) * factor;
 		});
 		this.sectionModifier.push(0.0);  // last tick after the race is done, or in a comparison in case one uma runs off the end of the track
@@ -1354,7 +1357,8 @@ export class RaceSolver {
 	}
 
 	checkWisdomForSkill(skill: PendingSkill): boolean {
-		let rngRoll = this.wisdomRollRng.random();
+		const wisdomKey = `${skill.skillId}:${skill.perspective ?? Perspective.Self}:${skill.trigger.start}:${skill.trigger.end}`;
+		const rngRoll = new Rule30CARng(deriveSeed(this.skillWisdomSeed, wisdomKey)).random();
 		const wisdom = skill.perspective === Perspective.Other && skill.originWisdom !== undefined 
 			? skill.originWisdom 
 			: this.horse.rawWisdom;
