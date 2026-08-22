@@ -4,7 +4,7 @@ Guidance for working in this repo. It's the race-simulation engine — no UI, no
 
 ## What this repo is
 
-`mackoz/uma-skill-tools`, a fork of [`alpha123/uma-skill-tools`](https://github.com/alpha123/uma-skill-tools), used as a **git submodule** by [`mackoz/uma-tools`](https://github.com/mackoz/uma-tools) (the browser app built on top of this engine) — the same relationship `alpha123/uma-tools` has with its own upstream engine submodule. Most of what's imported beyond upstream came from [`Werseter/uma-skill-tools@kachi`](https://github.com/Werseter/uma-skill-tools/tree/kachi); see `mackoz/uma-tools`'s `plans/engine-comparison/forks.md` for the attribution and a doc-vs-engine-vs-upstream comparison this repo doesn't duplicate.
+`mackoz/uma-skill-tools`, a fork of [`alpha123/uma-skill-tools`](https://github.com/alpha123/uma-skill-tools), used as a **git submodule** by [`mackoz/uma-tools`](https://github.com/mackoz/uma-tools) (the browser app built on top of this engine) — the same relationship `alpha123/uma-tools` has with its own upstream engine submodule. Most of what's imported beyond upstream came from [`Werseter/uma-skill-tools@kachi`](https://github.com/Werseter/uma-skill-tools/tree/kachi).
 
 ## The submodule workflow — read this before editing
 
@@ -22,7 +22,7 @@ Guidance for working in this repo. It's the race-simulation engine — no UI, no
 - No skill cooldowns — a skill can only activate once per simulated race.
 - No value/duration/level scaling tables.
 - `accumulatetime` combined with a distribution-modeled condition may still activate earlier than the distribution predicts (no per-skill exemption list, unlike upstream's).
-- A handful of shipped skill conditions (`temptation_opponent_count_behind`/`_infront`, `is_other_character_activate_advantage_skill`, plus ~11 JP-only names) aren't registered in `ActivationConditions.ts`'s `Conditions` table. Referencing one now throws a named `ConditionParser` `ParseError: unknown condition: <name>` at skill-build time instead of a bare `TypeError` — see `README.md`'s "Unknown skill conditions now fail loudly, by name" section. `mackoz/uma-tools`'s `plans/condition-reference/conditions.md` is a glossary of every condition string GameTora documents, with a per-entry note on whether this repo registers it — the first place to check what a name in a new `ParseError` means before deciding how (or whether) to implement it.
+- A handful of shipped skill conditions (`temptation_opponent_count_behind`/`_infront`, `is_other_character_activate_advantage_skill`, plus ~11 JP-only names) aren't registered in `ActivationConditions.ts`'s `Conditions` table. Referencing one now throws a named `ConditionParser` `ParseError: unknown condition: <name>` at skill-build time instead of a bare `TypeError` — see `README.md`'s "Unknown skill conditions now fail loudly, by name" section.
 
 ## `test/`, `tools/`, and pre-existing `tsc` errors
 
