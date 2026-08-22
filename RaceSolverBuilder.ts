@@ -240,7 +240,8 @@ export interface SkillData {
 	samplePolicy: ActivationSamplePolicy,
 	regions: RegionList,
 	extraCondition: DynamicCondition,
-	effects: SkillEffect[]
+	effects: SkillEffect[],
+	originWisdom?: number
 }
 
 function isTarget(self: Perspective, targetType: SkillTarget) {
@@ -255,7 +256,7 @@ function buildSkillEffects(skill, perspective: Perspective) {
 	}));
 }
 
-export function buildSkillData(horse: HorseParameters, raceParams: PartialRaceParameters, course: CourseData, wholeCourse: RegionList, parser: {parse: any, tokenize: any}, skillId: string, perspective: Perspective, ignoreNullEffects: boolean = false) {
+export function buildSkillData(horse: HorseParameters, raceParams: PartialRaceParameters, course: CourseData, wholeCourse: RegionList, parser: {parse: any, tokenize: any}, skillId: string, perspective: Perspective, ignoreNullEffects: boolean = false, originWisdom?: number) {
 	if (!(skillId in skills)) {
 		throw new Error('bad skill ID ' + skillId);
 	}
@@ -304,7 +305,8 @@ export function buildSkillData(horse: HorseParameters, raceParams: PartialRacePa
 				samplePolicy: op.samplePolicy,
 				regions: regions,
 				extraCondition: extraCondition,
-				effects: effects
+				effects: effects,
+				originWisdom: originWisdom
 			});
 		}
 	}
@@ -327,7 +329,8 @@ export function buildSkillData(horse: HorseParameters, raceParams: PartialRacePa
 			samplePolicy: ImmediatePolicy,
 			regions: afterEnd,
 			extraCondition: (_) => false,
-			effects: effects
+			effects: effects,
+			originWisdom: originWisdom
 		}];
 	}
 }
@@ -847,7 +850,7 @@ export class RaceSolverBuilder {
 		Object.freeze(wholeCourse);
 
 		const makeSkill = buildSkillData.bind(null, horse, this._raceParams, this._course, wholeCourse, this._parser);
-		const skilldata = this._skills.flatMap(({id,p}) => makeSkill(id, p));
+		const skilldata = this._skills.flatMap(({id,p,originWisdom}) => makeSkill(id, p, false, originWisdom));
 		this._extraSkillHooks.forEach(h => h(skilldata, horse, this._course));
 		const occurrences = new Map<string, number>();
 		const triggers = skilldata.map(sd => {
@@ -871,7 +874,7 @@ export class RaceSolverBuilder {
 				trigger: triggers[sdi][i % triggers[sdi].length],
 				extraCondition: sd.extraCondition,
 				effects: sd.effects,
-				originWisdom: this._skills[sdi].originWisdom
+				originWisdom: sd.originWisdom
 			}));
 
 			const hpRng = new Rule30CARng(this._rng.int32());
