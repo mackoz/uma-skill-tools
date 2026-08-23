@@ -10,6 +10,11 @@ Guidance for working in this repo. It's the race-simulation engine — no UI, no
 
 **Changes here don't reach `mackoz/uma-tools` automatically.** The flow is: edit here → commit → push to `origin` (this repo) → in `mackoz/uma-tools`, `cd uma-skill-tools && git pull` (or checkout the new commit) → commit the resulting gitlink bump in `mackoz/uma-tools`. If you're working from a session that has both repos checked out as siblings, don't edit the copy inside `mackoz/uma-tools/uma-skill-tools/` expecting it to persist — that's a submodule checkout, not this repo's working tree; edits there are just as real but need the same commit-here-then-bump-there flow, and it's easy to lose track of which checkout you're actually in.
 
+## Branching & PRs
+
+- **One open PR in this repo at a time.** Before creating a branch, check for an existing open PR/branch covering the same area (`gh pr list`) and push to that branch instead of branching off the default branch again.
+- A PR merged here isn't done until `mackoz/uma-tools` bumps its submodule gitlink (see the workflow above).
+
 ## Hard rules
 
 1. **Never hand-edit `data/*.json`.** These are Perl-generated from the game's `master.mdb` (`tools/make_skill_data.pl` → `data/skill_data.json`, `tools/make_skillnames.pl` → `data/skillnames.json`, `tools/make_course_data.pl` → `data/course_data.json`). Edit the generating `.pl` script and regenerate. The one exception this repo's history has needed: a small number of specific, individually-verified value corrections sourced from a real `master.mdb` query or an already-computed-and-verified value from alpha123's data, applied via a short one-off script (not by hand) when a full regen wasn't possible — see the `Fix HP-1` commit for the pattern, and don't treat it as a precedent for casual hand-edits.
@@ -32,6 +37,11 @@ As of 2026-08-20, `npx tsc --noEmit` reports **14 pre-existing errors**: two in 
 ## Running tests
 
 `npm test` runs `test/parser.ts` (a `tape`/`fast-check` property test round-tripping the condition parser's AST through stringify/parse) and currently passes. This used to be a stub even though `tape`/`fast-check` were already installed. `test/race.ts` (a similar property test over `RaceSolver`, parameterized via `--runs`/`--timestep`) is **not** wired into `npm test` and currently has three `RaceParams`/`HorseDesc` type errors. `test/bench/bench.ts` and `test/regression/` (a checkpoint-based regression system — `create-checkpoint.ts`/`check.ts`/`knowncases.ts`) are also standalone, invoked directly via `ts-node`, not part of `npm test`.
+
+## Documentation changes
+
+- When rewriting a doc (`README.md`, `docs/adr/`), keep its existing format — tables stay tables; don't convert a table to prose unless explicitly asked.
+- Verify factual claims (mechanics numbers, table/column names, error behavior) against the source or a real `master.mdb` query before writing them, and cite the file you checked.
 
 ## Exploring `master.mdb`
 
