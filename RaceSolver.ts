@@ -305,6 +305,7 @@ export class RaceSolver {
 	rushedEnterPosition: number  // Position where rushed state should activate
 	rushedTimer: Timer  // Tracks time in rushed state
 	rushedMaxDuration: number  // Maximum duration (12s + extensions)
+	rushedEscapeRolls: number  // How many of the 3 escape rolls (at 3s/6s/9s) have been taken
 	rushedActivations: Array<[number, number]>  // Track [start, end] positions for UI
 	positionKeepActivations: Array<[number, number, PositionKeepState]>  // Track [start, end, state] positions for UI
 
@@ -466,7 +467,8 @@ export class RaceSolver {
 		this.rushedEnterPosition = -1;
 		this.rushedTimer = this.getNewTimer();
 		this.rushedMaxDuration = 12.0;
-		
+		this.rushedEscapeRolls = 0;
+
 		// Initialize downhill mode
 		this.isDownhillMode = false;
 		this.downhillActivations = [];
@@ -614,20 +616,27 @@ export class RaceSolver {
 			this.isRushed = true;
 			this.hasBeenRushed = true;  // Mark that this horse has been rushed
 			this.rushedTimer.t = 0;
+			this.rushedEscapeRolls = 0;
 			this.rushedActivations.push([this.pos, -1]);  // Start tracking, end will be filled later
 		}
-		
+
 		// Update rushed state if active
 		if (this.isRushed) {
-			// Check for recovery every 3 seconds
-			if (this.rushedTimer.t > 0 && Math.floor(this.rushedTimer.t / 3) > Math.floor((this.rushedTimer.t - 0.017) / 3)) {
+			// The game grants an escape roll at each 3s boundary (3s, 6s, 9s) and force-ends the
+			// state at 12s -- three rolls total, no roll at the cap. Counting the rolls taken keeps
+			// this independent of the timestep: the old check compared against a hardcoded 1/60s
+			// epsilon while every caller steps at 1/15s, which silently dropped the 6s and 9s rolls
+			// entirely (see DYN-11). Refs: mee1080/umasim RaceCalculator.kt:245-263;
+			// alpha123/uma-skill-tools RaceSolver.ts:348-359.
+			while (this.rushedEscapeRolls < 3 && this.rushedTimer.t >= 3 * (this.rushedEscapeRolls + 1)) {
+				this.rushedEscapeRolls++;
 				// 55% chance to snap out of it
 				if (this.rushedRng.random() < 0.55) {
 					this.endRushedState();
 					return;
 				}
 			}
-			
+
 			// Force end after max duration
 			if (this.rushedTimer.t >= this.rushedMaxDuration) {
 				this.endRushedState();
