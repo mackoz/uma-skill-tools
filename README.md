@@ -13,7 +13,7 @@ npm install
 npm test
 ```
 
-This installs `ts-node` and runs the currently wired condition-parser property test. See `CLAUDE.md` and `tools/README.md` for the standalone typecheck and the current status of the older CLI tools.
+This installs `ts-node` and runs the currently wired tests: `test/parser.ts` (a condition-parser property test) and `test/activation-sampling.ts` (sample-policy bounds and derived-seed isolation). See `CLAUDE.md` and `tools/README.md` for the standalone typecheck and the current status of the older CLI tools.
 
 Charting features require Python and matplotlib.
 
@@ -63,7 +63,7 @@ Same naming-mismatch bug class as the `running_style_temptation_opponent_count_*
 
 Four condition names that were hitting exactly this crash are now real implementations instead of missing entirely: `is_activate_any_skill` (extended to also count skills forced via `doActivateRandomGold`/Adventure of 564), `order_rate_in50_continue` (one-line addition to the existing `orderInFilter`/`orderOutFilter` family — same static-`orderRange` caveat as the rest of that family, see above), `last_straight_random` (built the same way as `phase_straight_random`/`is_last_straight`, just without the phase bounds), and `activate_count_later_half` (a new `activateCountLaterHalf` counter on `RaceState`, incremented for `pos >= course.distance / 2`).
 
-Three condition names remain unregistered and will still throw the new named `ParseError` — `temptation_opponent_count_behind`/`temptation_opponent_count_infront` and `is_other_character_activate_advantage_skill` — along with roughly a dozen JP-only names (`furlong`, `is_abroad`, `run_at_full_speed_random`, etc.).
+Twelve condition names remain unregistered and will still throw the new named `ParseError`: three named ones — `temptation_opponent_count_behind`/`temptation_opponent_count_infront` and `is_other_character_activate_advantage_skill` — plus nine JP-only names (`furlong`, `is_abroad`, `is_exist_skill_id`, `near_infront_count`, `phase_first_half_straight_random`, `phase_laterhalf`, `phase_latter_half_straight_random`, `run_at_full_speed_random`, `up_slope_random_later_half`).
 
 ## Scaling effects are not implemented
 
