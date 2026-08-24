@@ -72,4 +72,4 @@ The output of speedguts.ts is intended to be piped into speedguts_colormesh.py f
 
 # make_skill_data.pl and make_skillnames.pl
 
-Used to generate the data/skill_data.json and data/skillnames.json files. make_skill_data.pl takes a path to master.mdb and make_skillnames.pl takes a file obtained from a GameTora quasi-API thing.
+Used to generate the data/skill_data.json and data/skillnames.json files. make_skill_data.pl takes a path to master.mdb; make_skillnames.pl takes two positional args, a path to master.mdb (for JP names) followed by a file obtained from a GameTora quasi-API thing (for EN names).

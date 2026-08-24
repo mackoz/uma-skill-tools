@@ -28,7 +28,7 @@ Guidance for working in this repo. It's the race-simulation engine — no UI, no
 - No skill cooldowns — a skill can only activate once per simulated race.
 - No value/duration/level scaling tables.
 - `accumulatetime` combined with a distribution-modeled condition may still activate earlier than the distribution predicts (no per-skill exemption list, unlike alpha123's engine).
-- A handful of shipped skill conditions (`temptation_opponent_count_behind`/`_infront`, `is_other_character_activate_advantage_skill`, plus ~11 JP-only names) aren't registered in `ActivationConditions.ts`'s `Conditions` table. Referencing one now throws a named `ConditionParser` `ParseError: unknown condition: <name>` at skill-build time instead of a bare `TypeError` — see `README.md`'s "Unknown skill conditions now fail loudly, by name" section.
+- A handful of shipped skill conditions (`temptation_opponent_count_behind`/`_infront`, `is_other_character_activate_advantage_skill`, plus 11 JP-only names) aren't registered in `ActivationConditions.ts`'s `Conditions` table — 14 unregistered names total. Referencing one now throws a named `ConditionParser` `ParseError: unknown condition: <name>` at skill-build time instead of a bare `TypeError` — see `README.md`'s "Unknown skill conditions now fail loudly, by name" section.
 
 ## `test/`, `tools/`, and pre-existing `tsc` errors
 
@@ -36,7 +36,7 @@ As of 2026-08-20, `npx tsc --noEmit` reports **14 pre-existing errors**: two in 
 
 ## Running tests
 
-`npm test` runs `test/parser.ts` (a `tape`/`fast-check` property test round-tripping the condition parser's AST through stringify/parse) and currently passes. This used to be a stub even though `tape`/`fast-check` were already installed. `test/race.ts` (a similar property test over `RaceSolver`, parameterized via `--runs`/`--timestep`) is **not** wired into `npm test` and currently has three `RaceParams`/`HorseDesc` type errors. `test/bench/bench.ts` and `test/regression/` (a checkpoint-based regression system — `create-checkpoint.ts`/`check.ts`/`knowncases.ts`) are also standalone, invoked directly via `ts-node`, not part of `npm test`.
+`npm test` runs `test/parser.ts` (a `tape`/`fast-check` property test round-tripping the condition parser's AST through stringify/parse) followed by `test/activation-sampling.ts` (12 tests covering `ErlangRandomPolicy`/`LogNormalRandomPolicy` sampling bounds and `deriveSeed` stream isolation), and both currently pass. `test/parser.ts` used to be a stub even though `tape`/`fast-check` were already installed; `test/activation-sampling.ts` was added alongside the statistical-sampling stabilization fix. `test/race.ts` (a similar property test over `RaceSolver`, parameterized via `--runs`/`--timestep`) is **not** wired into `npm test` and currently has three `RaceParams`/`HorseDesc` type errors. `test/bench/bench.ts` and `test/regression/` (a checkpoint-based regression system — `create-checkpoint.ts`/`check.ts`/`knowncases.ts`) are also standalone, invoked directly via `ts-node`, not part of `npm test`.
 
 ## Documentation changes
 
