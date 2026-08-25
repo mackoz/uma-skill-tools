@@ -390,7 +390,7 @@ function orderOutFilter(rate: number) {
 	distance_rate_after_random, distance_type, down_slope_random, grade, ground_condition, ground_type, hp_per, infront_near_lane_time,
 	is_activate_any_skill, is_activate_other_skill_detail, is_badstart,
 	is_basis_distance, is_behind_in, is_exist_chara_id, is_finalcorner, is_finalcorner_laterhalf, is_finalcorner_random, is_hp_empty_onetime,
-	is_last_straight_onetime, is_lastspurt, is_move_lane, is_overtake, is_surrounded, is_temptation, lane_type, last_straight_random, near_count,
+	is_last_straight_onetime, is_lastspurt, is_move_lane, is_overtake, is_surrounded, is_temptation, is_tight_track, lane_type, last_straight_random, near_count,
 	order, order_rate, order_rate_in20_continue, order_rate_in40_continue, order_rate_in50_continue, order_rate_out40_continue, order_rate_out50_continue,
 	order_rate_out70_continue, overtake_target_no_order_up_time, overtake_target_time, phase, phase_firsthalf_random, phase_laterhalf_random,
 	phase_random, popularity, post_number, random_lot, remain_distance, remain_distance_viewer_id, rotation, running_style,
@@ -760,6 +760,15 @@ export const Conditions: {[cond: string]: Condition} = Object.freeze({
 			return [regions, (s: RaceState) => s.usedSkills.has('' + skillId)] as [RegionList, DynamicCondition];
 		}
 	}),
+	// Cygames' own master.mdb collapsed several skills' literal
+	// `track_id==10001@track_id==10002@track_id==10004@track_id==10010@track_id==10103@track_id==10104`
+	// (Sapporo/Hakodate/Fukushima/Kokura/Kawasaki/Funabashi -- the compact regional/local
+	// tracks) into this single flag in a 2026-08 data update; this registers the equivalent
+	// so those skills' conditions keep parsing instead of hitting the "unknown condition"
+	// ParseError. Re-derive the id set from a fresh master.mdb if a future refresh adds or
+	// drops a track from the set -- there's no dedicated column for it to read straight off.
+	is_tight_track: valueFilter((course: CourseData, _: HorseParameters, extra: RaceParameters) =>
+		[10001, 10002, 10004, 10010, 10103, 10104].includes(course.raceTrackId) ? 1 : 0),
 	lane_type: noopImmediate,
 	// "Picks a random point on the last straight" — same shape as phase_straight_random but without the
 	// phase bounds, and same last-straight lookup as is_last_straight/is_last_straight_onetime above.
