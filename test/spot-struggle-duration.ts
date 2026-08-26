@@ -6,9 +6,13 @@ import test from 'tape';
 import { RaceSolver, Timer } from '../RaceSolver';
 import { Aptitude } from '../HorseTypes';
 
-// updateLeadCompetition() early-returns at the `leadCompetitionStart !== null` guard, so with a
-// non-null start the entry-detection half (this.umas / this.sectionLength) is unreachable and the
-// stub only needs the exit branch's fields -- same spirit as test/rushed-escape-roll.ts's stub.
+// updateLeadCompetition() dispatches straight to updateLeadCompetitionExit() when
+// leadCompetitionStart is non-null, so the entry-detection half (tryStartLeadCompetition(),
+// this.sectionLength) is unreachable here -- same spirit as test/rushed-escape-roll.ts's stub.
+// umas is deliberately empty: updateLeadCompetitionExit()'s DYN-14 distance/lateral exit reads
+// `this.umas` for other same-style participants, and an empty list makes that branch a no-op
+// (zero participants -> immediate return), so the duration timer alone still governs exit here,
+// exactly as before DYN-14.
 function makeStruggleStub(guts: number, strategyAptitude: Aptitude) {
 	return {
 		leadCompetitionEnabled: true,
@@ -18,6 +22,11 @@ function makeStruggleStub(guts: number, strategyAptitude: Aptitude) {
 		leadCompetitionTimer: new Timer(0),
 		pos: 0,
 		horse: {guts, strategyAptitude},
+		umas: [] as any[],
+		// updateLeadCompetition() calls this.updateLeadCompetitionExit() as a method, so a plain
+		// stub needs the real implementation attached (same reason rushed-escape-roll.ts's stub
+		// attaches endRushedState) -- it isn't on this object's prototype chain otherwise.
+		updateLeadCompetitionExit: RaceSolver.prototype.updateLeadCompetitionExit,
 	};
 }
 

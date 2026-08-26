@@ -336,6 +336,7 @@ export class RaceSolver {
 	leadCompetition: boolean
 	leadCompetitionStart: number | null
 	leadCompetitionEnd: number | null
+	leadCompetitionDistanceExited: boolean
 	leadCompetitionTimer: Timer
 	
 	// lane movement..........
@@ -499,6 +500,7 @@ export class RaceSolver {
 		this.leadCompetition = false;
 		this.leadCompetitionStart = null;
 		this.leadCompetitionEnd = null;
+		this.leadCompetitionDistanceExited = false;
 		this.leadCompetitionTimer = this.getNewTimer();
 
 		this.laneMovementEnabled = params.laneMovement !== false;
@@ -1119,42 +1121,149 @@ export class RaceSolver {
 		if (!this.leadCompetitionEnabled) {
 			return;
 		}
-		
-		if (this.leadCompetition) {
-			// Duration is scaled by the runner's strategy-aptitude rank (game's CompeteTop
-			// parameter block; confirmed empirically by hakuraku.moe/notes/spot-struggle's
-			// replay-frame analysis -- see work-queue DYN-8). this.horse.strategyAptitude is
-			// read unconditionally, even when posKeepStrategy was reassigned to Nige at runtime
-			// (promoted pacer / virtual pacemaker, see updateRace() around :835/:846): the
-			// engine only has one scalar aptitude per horse, not a per-strategy table, so there
-			// is no better value available -- torena-sim's independent implementation makes the
-			// same simplification (self.aptitudes.strategy, a single scalar).
-			let leadCompeteDuration = Math.pow(700 * this.horse.guts, 0.5) * 0.012 * StrategyProficiencyModifier[this.horse.strategyAptitude];
-
-			if (this.leadCompetitionTimer.t >= leadCompeteDuration || this.pos >= this.leadCompetitionEnd) {
-				this.leadCompetition = false;
-				this.leadCompetitionEnd = this.pos;
-			}
-		}
 
 		if (this.leadCompetitionStart !== null) {
+			this.updateLeadCompetitionExit();
 			return;
 		}
 
-		if (this.pos >= 150 && this.pos <= Math.floor(this.sectionLength * 5) && (StrategyHelpers.strategyMatches(this.posKeepStrategy, Strategy.Nige))) {
-			let otherUmas = this.umas.filter(u => u.posKeepStrategy === this.posKeepStrategy);
-			let distanceGap = this.posKeepStrategy === Strategy.Nige ? 3.75 : 5;
+		this.tryStartLeadCompetition();
+	}
 
-			let umasWithinGap = otherUmas.filter(u => Math.abs(u.pos - this.pos) <= distanceGap);
+	// Exit side, for an uma who is already in (or has already been through) a spot struggle.
+	// The duration/section-9 cap is checked first, and only a struggler who survives it is tested
+	// against the DistanceGap2/LaneGap2 exit -- an uma who times out naturally must NOT be marked
+	// as having distance-exited, because the last-struggler cascade below keys off exactly that
+	// distinction (see work-queue DYN-14).
+	updateLeadCompetitionExit() {
+		if (!this.leadCompetition) {
+			return;
+		}
 
-			if (umasWithinGap.length >= 2) {
-				for (let uma of umasWithinGap) {
-					uma.leadCompetitionTimer.t = 0;
-					uma.leadCompetition = true;
-					uma.leadCompetitionStart = uma.pos;
-					uma.leadCompetitionEnd = uma.pos + Math.floor(this.sectionLength * 8);
-				}
+		// Duration is scaled by the runner's strategy-aptitude rank (game's CompeteTop
+		// parameter block; confirmed empirically by hakuraku.moe/notes/spot-struggle's
+		// replay-frame analysis -- see work-queue DYN-8). this.horse.strategyAptitude is
+		// read unconditionally, even when posKeepStrategy was reassigned to Nige at runtime
+		// (promoted pacer / virtual pacemaker, see updateRace() around :835/:846): the
+		// engine only has one scalar aptitude per horse, not a per-strategy table, so there
+		// is no better value available -- torena-sim's independent implementation makes the
+		// same simplification (self.aptitudes.strategy, a single scalar).
+		let leadCompeteDuration = Math.pow(700 * this.horse.guts, 0.5) * 0.012 * StrategyProficiencyModifier[this.horse.strategyAptitude];
+
+		// leadCompetitionEnd is EndSection: 9, i.e. the absolute position where section 9 starts,
+		// shared by the whole group -- not an offset from where this uma personally triggered
+		// (see work-queue DYN-14).
+		if (this.leadCompetitionTimer.t >= leadCompeteDuration || this.pos >= this.leadCompetitionEnd) {
+			this.leadCompetition = false;
+			this.leadCompetitionEnd = this.pos;
+			return;
+		}
+
+		// DistanceGap2 / LaneGap2: an active struggler drops out once she is at least 5m behind
+		// (or 0.416 course widths to the side of) EVERY other struggler of her style who is still
+		// active. Umas who have already left stay in `participants` because the cascade rule below
+		// needs to know how they left.
+		let participants = this.umas.filter(u => u !== this && u.posKeepStrategy === this.posKeepStrategy && u.leadCompetitionStart !== null);
+
+		if (participants.length === 0) {
+			return;
+		}
+
+		let activeParticipants = participants.filter(u => u.leadCompetition);
+
+		if (activeParticipants.length === 0) {
+			// Cascade: the last struggler standing leaves only if every other participant left via
+			// this distance/lateral exit. Natural duration expiry does not cascade.
+			if (participants.every(u => u.leadCompetitionDistanceExited)) {
+				this.leadCompetition = false;
+				this.leadCompetitionDistanceExited = true;
+				this.leadCompetitionEnd = this.pos;
 			}
+			return;
+		}
+
+		let behindAll = activeParticipants.every(u => u.pos - this.pos >= 5.0);
+		// currentLane is only a simulated lane position when lane movement is enabled; with it off
+		// (e.g. the Skill Chart, see umalator/app.tsx's buildChartOptions) it stays frozen at the
+		// starting-gate lane, so a lateral comparison there would be a gate-draw artifact, not a
+		// simulated fact.
+		let lateralAll = this.laneMovementEnabled && activeParticipants.every(u => Math.abs(u.currentLane - this.currentLane) >= 0.416 * this.course.courseWidth);
+
+		if (behindAll || lateralAll) {
+			this.leadCompetition = false;
+			this.leadCompetitionDistanceExited = true;
+			this.leadCompetitionEnd = this.pos;
+		}
+	}
+
+	// Entry side (game's CompeteTop: CheckStartDistance 150, CheckEndSection 6, EndSection 9,
+	// NigeCount/OonigeCount 1, DistanceGap1 3.75, LaneGap1 0.165). Like updatefirstUmaInLateRace()
+	// below, this is a whole-field operation that any one uma's tick may perform: whichever uma of
+	// the style runs first this frame triggers the entire group through this.umas, and everyone
+	// else's own call that frame short-circuits on the leadCompetitionStart guard in
+	// updateLeadCompetition().
+	tryStartLeadCompetition() {
+		if (!StrategyHelpers.strategyMatches(this.posKeepStrategy, Strategy.Nige)) {
+			return;
+		}
+
+		// CheckStartDistance is field-global: ANY uma passing 150m unlocks spot struggle for the
+		// whole field, so a trailing front runner can be pulled in before her own 150m mark
+		// (hakuraku.moe/notes/spot-struggle: front runners triggering at ~137m behind an oonige
+		// who was already past 150m). pos is monotonic, so this needs no latching flag.
+		if (!this.umas.some(u => u.pos >= 150)) {
+			return;
+		}
+
+		// Nige and Oonige are separate styles here (exact equality, not strategyMatches): they form
+		// separate groups and get separate once-per-race budgets, per NigeCount/OonigeCount.
+		// Umas with the mechanic disabled are excluded so they neither anchor a group nor get
+		// spot-struggle state written onto them by someone else's tick (their own per-tick
+		// processing never runs to unwind it, since updateLeadCompetition() returns immediately
+		// when leadCompetitionEnabled is false).
+		let sameStrategyUmas = this.umas.filter(u => u.posKeepStrategy === this.posKeepStrategy && u.leadCompetitionEnabled);
+
+		// NigeCount/OonigeCount: 1 -- one spot struggle per style per race, for the whole field.
+		// There is no race-level object to hold that flag on, so it is derived from the field: any
+		// same-style uma with a non-null leadCompetitionStart means this style already had its
+		// struggle (leadCompetitionStart is set once at trigger and never cleared).
+		if (sameStrategyUmas.some(u => u.leadCompetitionStart !== null)) {
+			return;
+		}
+
+		if (sameStrategyUmas.length < 2) {
+			return;
+		}
+
+		let frontmostUma = sameStrategyUmas.reduce((front, u) => u.pos > front.pos ? u : front);
+		let entryLaneGap = 0.165 * this.course.courseWidth;
+
+		// DistanceGap1/LaneGap1, measured from the frontmost uma of the style -- who is trivially
+		// within 0 of herself and so is always part of her own group.
+		let umasWithinGap = sameStrategyUmas.filter(u => {
+			let distanceBehind = frontmostUma.pos - u.pos;
+			return distanceBehind >= 0 && distanceBehind < 3.75
+				&& (!this.laneMovementEnabled || Math.abs(u.currentLane - frontmostUma.currentLane) < entryLaneGap);
+		});
+
+		if (umasWithinGap.length < 2) {
+			return;
+		}
+
+		// CheckEndSection: 6 -- only ONE of the grouped umas needs to still be inside section 6.
+		if (!umasWithinGap.some(u => u.pos <= Math.floor(this.sectionLength * 6))) {
+			return;
+		}
+
+		// EndSection: 9 -- an absolute position shared by the whole group, not an offset from each
+		// uma's own trigger point.
+		let leadCompetitionEnd = Math.floor(this.sectionLength * 8);
+
+		for (let uma of umasWithinGap) {
+			uma.leadCompetitionTimer.t = 0;
+			uma.leadCompetition = true;
+			uma.leadCompetitionStart = uma.pos;
+			uma.leadCompetitionEnd = leadCompetitionEnd;
 		}
 	}
 
