@@ -4,7 +4,7 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "test": "ts-node test/parser.ts && ts-node test/activation-sampling.ts && ts-node test/rushed-escape-roll.ts"
+    "test": "ts-node test/parser.ts && ts-node test/activation-sampling.ts && ts-node test/rushed-escape-roll.ts && ts-node test/spot-struggle-duration.ts && ts-node test/spot-struggle-group.ts"
   },
   "author": "pecan",
   "license": "GPL-3.0-or-later",

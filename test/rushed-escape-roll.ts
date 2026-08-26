@@ -7,12 +7,13 @@
 import test from 'tape';
 import { RaceSolver, Timer } from '../RaceSolver';
 import { Rule30CARng } from '../Random';
+import { attachMethods, stepUntilInactive, seededSubStream } from './RaceSolverTestHelpers';
 
 // updateRushedState()/endRushedState() only touch a handful of instance fields (see RaceSolver.ts);
 // build the minimal stand-in rather than constructing a full RaceSolver (course/horse/skills), which
 // keeps this test independent of the data-driven builder machinery test/race.ts already covers.
 function makeRushedStub(seed: number) {
-	return {
+	return attachMethods({
 		isRushed: false,
 		hasBeenRushed: false,
 		rushedSection: 2,
@@ -23,8 +24,7 @@ function makeRushedStub(seed: number) {
 		rushedMaxDuration: 12.0,
 		rushedActivations: [] as Array<[number, number]>,
 		rushedRng: new Rule30CARng(seed),
-		endRushedState: RaceSolver.prototype.endRushedState,
-	};
+	}, 'endRushedState');
 }
 
 // Run one race's worth of Rushed, stepping updateRushedState() the way RaceSolver.step() does:
@@ -32,23 +32,14 @@ function makeRushedStub(seed: number) {
 function simulateOneRushedDuration(seed: number, dt: number): number {
 	const s = makeRushedStub(seed);
 	RaceSolver.prototype.updateRushedState.call(s); // entry, since pos(0) >= rushedEnterPosition(0)
-	let t = 0;
-	while (s.isRushed && t < 20) {
-		t += dt;
-		s.rushedTimer.t += dt;
-		RaceSolver.prototype.updateRushedState.call(s);
-	}
-	return t;
+	return stepUntilInactive(s, RaceSolver.prototype.updateRushedState, s => s.rushedTimer, s => s.isRushed, dt, 20);
 }
 
 function histogram(dt: number, samples: number, masterSeed: number) {
-	// Match production seeding (RaceSolver.ts: `new Rule30CARng(this.rng.int32())`) rather than
-	// feeding raw sequential integers to the RNG directly -- Prando's first draw is correlated
-	// with a small integer seed, which biases exactly the single roll this test measures.
-	const master = new Rule30CARng(masterSeed);
+	const nextSeed = seededSubStream(masterSeed);
 	const counts = {3: 0, 6: 0, 9: 0, 12: 0};
 	for (let i = 0; i < samples; ++i) {
-		const duration = simulateOneRushedDuration(master.int32(), dt);
+		const duration = simulateOneRushedDuration(nextSeed(), dt);
 		// bucket into the nearest of the 4 possible exit points, tolerant of float-drift overshoot
 		// past a boundary (up to ~1 frame -- see DYN-11's plan for why that drift is expected and
 		// harmless) with margin to spare before the next boundary 3s away.
@@ -67,12 +58,8 @@ test('Rushed escapes at exactly 3 boundaries (3s/6s/9s) plus a forced 12s cap', 
 	// and confirm rushedEscapeRolls never exceeds 3 regardless of how long we keep stepping.
 	s.rushedRng = {random: () => 1.0} as any; // always >= 0.55, never escapes early
 	const dt = 1 / 15;
-	let t_ = 0;
-	while (s.isRushed && t_ < 20) {
-		t_ += dt;
-		s.rushedTimer.t += dt;
-		RaceSolver.prototype.updateRushedState.call(s);
-	}
+	const t_ = stepUntilInactive(s, RaceSolver.prototype.updateRushedState, s => s.rushedTimer, s => s.isRushed, dt, 20);
+
 	t.equal(s.rushedEscapeRolls, 3, 'exactly 3 escape rolls are taken, never more');
 	t.ok(!s.isRushed, 'still force-ends at the 12s cap even when every escape roll fails');
 	t.ok(t_ >= 12 && t_ < 12 + dt, 'forced end lands within one frame of the 12s cap');

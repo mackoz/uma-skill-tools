@@ -1,7 +1,7 @@
 import * as fs from 'fs';
 import { Command, Option, InvalidArgumentError } from 'commander';
 
-import { HorseParameters, Strategy, Aptitude } from '../HorseTypes';
+import { HorseParameters, Strategy, Aptitude, StrategyProficiencyModifier } from '../HorseTypes';
 import { CourseData, CourseHelpers } from '../CourseData';
 import { Region, RegionList } from '../Region';
 import { PRNG } from '../Random';
@@ -40,8 +40,6 @@ export function parseAptitude(a: string, type: string) {
 	default: throw new InvalidArgumentError('Invalid ' + type + ' aptitude.');
 	}
 }
-
-const StrategyProficiencyModifier = Object.freeze([1.1, 1.0, 0.85, 0.75, 0.6, 0.4, 0.2, 0.1]);
 
 type GroundCondition = 'good' | 'yielding' | 'soft' | 'heavy';
 
