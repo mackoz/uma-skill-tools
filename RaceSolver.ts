@@ -1,6 +1,6 @@
 import { strict as assert } from 'node:assert';
 
-import { Strategy, Aptitude, HorseParameters, StrategyHelpers } from './HorseTypes';
+import { Strategy, Aptitude, HorseParameters, StrategyHelpers, StrategyProficiencyModifier } from './HorseTypes';
 import { CourseData, CourseHelpers, Phase } from './CourseData';
 import { Region } from './Region';
 import { deriveSeed, PRNG, Rule30CARng } from './Random';
@@ -1121,7 +1121,15 @@ export class RaceSolver {
 		}
 		
 		if (this.leadCompetition) {
-			let leadCompeteDuration = Math.pow(700 * this.horse.guts, 0.5) * 0.012;
+			// Duration is scaled by the runner's strategy-aptitude rank (game's CompeteTop
+			// parameter block; confirmed empirically by hakuraku.moe/notes/spot-struggle's
+			// replay-frame analysis -- see work-queue DYN-8). this.horse.strategyAptitude is
+			// read unconditionally, even when posKeepStrategy was reassigned to Nige at runtime
+			// (promoted pacer / virtual pacemaker, see updateRace() around :835/:846): the
+			// engine only has one scalar aptitude per horse, not a per-strategy table, so there
+			// is no better value available -- torena-sim's independent implementation makes the
+			// same simplification (self.aptitudes.strategy, a single scalar).
+			let leadCompeteDuration = Math.pow(700 * this.horse.guts, 0.5) * 0.012 * StrategyProficiencyModifier[this.horse.strategyAptitude];
 
 			if (this.leadCompetitionTimer.t >= leadCompeteDuration || this.pos >= this.leadCompetitionEnd) {
 				this.leadCompetition = false;
