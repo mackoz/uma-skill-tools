@@ -8,6 +8,7 @@
 import test from 'tape';
 import { RaceSolver, Timer } from '../RaceSolver';
 import { Aptitude, Strategy } from '../HorseTypes';
+import { attachMethods, field } from './RaceSolverTestHelpers';
 
 const COURSE_WIDTH = 11.25;
 const SECTION_LENGTH = 100; // matches hakuraku's worked example (2400m / 24 sections -> section 6 ends at 600m)
@@ -16,7 +17,7 @@ const SECTION_LENGTH = 100; // matches hakuraku's worked example (2400m / 24 sec
 // (see RaceSolver.ts); build a minimal stand-in rather than a full RaceSolver, same spirit as
 // test/rushed-escape-roll.ts and test/spot-struggle-duration.ts.
 function makeUma(pos: number, strategy: Strategy, opts: {lane?: number, laneMovement?: boolean} = {}) {
-	return {
+	return attachMethods({
 		leadCompetitionEnabled: true,
 		leadCompetition: false,
 		leadCompetitionStart: null as number | null,
@@ -31,14 +32,7 @@ function makeUma(pos: number, strategy: Strategy, opts: {lane?: number, laneMove
 		course: {courseWidth: COURSE_WIDTH},
 		horse: {guts: 1200, strategyAptitude: Aptitude.A}, // ~11s duration, never the limiting factor here
 		umas: [] as any[],
-	};
-}
-
-// Wires every uma's `umas` to the same shared array including herself, matching initUmas()'s
-// real shape (RaceSolver.ts:559-560).
-function field(...umas: any[]) {
-	umas.forEach(u => { u.umas = umas; });
-	return umas;
+	}, 'tryStartLeadCompetition', 'updateLeadCompetitionExit');
 }
 
 const tryStart = (u: any) => RaceSolver.prototype.tryStartLeadCompetition.call(u);

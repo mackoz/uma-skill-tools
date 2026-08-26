@@ -5,16 +5,19 @@
 import test from 'tape';
 import { RaceSolver, Timer } from '../RaceSolver';
 import { Aptitude } from '../HorseTypes';
+import { attachMethods, stepUntilInactive } from './RaceSolverTestHelpers';
 
 // updateLeadCompetition() dispatches straight to updateLeadCompetitionExit() when
 // leadCompetitionStart is non-null, so the entry-detection half (tryStartLeadCompetition(),
 // this.sectionLength) is unreachable here -- same spirit as test/rushed-escape-roll.ts's stub.
-// umas is deliberately empty: updateLeadCompetitionExit()'s DYN-14 distance/lateral exit reads
+// updateLeadCompetitionExit is attached because updateLeadCompetition() calls it as
+// this.updateLeadCompetitionExit(), which a plain stub doesn't have on its prototype chain
+// otherwise. umas is deliberately empty: that method's DYN-14 distance/lateral exit reads
 // `this.umas` for other same-style participants, and an empty list makes that branch a no-op
 // (zero participants -> immediate return), so the duration timer alone still governs exit here,
 // exactly as before DYN-14.
 function makeStruggleStub(guts: number, strategyAptitude: Aptitude) {
-	return {
+	return attachMethods({
 		leadCompetitionEnabled: true,
 		leadCompetition: true,
 		leadCompetitionStart: 0,
@@ -23,24 +26,14 @@ function makeStruggleStub(guts: number, strategyAptitude: Aptitude) {
 		pos: 0,
 		horse: {guts, strategyAptitude},
 		umas: [] as any[],
-		// updateLeadCompetition() calls this.updateLeadCompetitionExit() as a method, so a plain
-		// stub needs the real implementation attached (same reason rushed-escape-roll.ts's stub
-		// attaches endRushedState) -- it isn't on this object's prototype chain otherwise.
-		updateLeadCompetitionExit: RaceSolver.prototype.updateLeadCompetitionExit,
-	};
+	}, 'updateLeadCompetitionExit');
 }
 
 // Step the way RaceSolver.step() does: advance the timer by dt, then evaluate. Returns the elapsed
 // time at which the struggle ended (always in [duration, duration + dt)).
 function spotStruggleDuration(guts: number, aptitude: Aptitude, dt = 1 / 15): number {
 	const s = makeStruggleStub(guts, aptitude);
-	let t = 0;
-	while (s.leadCompetition && t < 60) {
-		t += dt;
-		s.leadCompetitionTimer.t += dt;
-		RaceSolver.prototype.updateLeadCompetition.call(s);
-	}
-	return t;
+	return stepUntilInactive(s, RaceSolver.prototype.updateLeadCompetition, s => s.leadCompetitionTimer, s => s.leadCompetition, dt, 60);
 }
 
 const unmodified = (guts: number) => Math.pow(700 * guts, 0.5) * 0.012;
