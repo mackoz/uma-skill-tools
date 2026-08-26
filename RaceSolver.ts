@@ -803,17 +803,23 @@ export class RaceSolver {
 		this.pacer = pacemaker;
 	}
 
+	// Furthest-forward (highest .pos) uma in a non-empty group. Shared by getPacer()'s two
+	// "pick the leader of this style group" lookups and tryStartLeadCompetition()'s frontmost-uma
+	// reference (see work-queue DYN-14) -- all three were the same reduce written out separately.
+	// Static (not this.<method>) so it stays callable via RaceSolver.prototype.<method>.call(stub)
+	// in the mechanics-test stubs (test/RaceSolverTestHelpers.ts's attachMethods) without needing
+	// to be attached as a sibling method itself.
+	static frontmostByPos<T extends {pos: number}>(umas: T[]): T {
+		return umas.reduce((max, uma) => uma.pos > max.pos ? uma : max, umas[0]);
+	}
+
 	getPacer(): RaceSolver | null {
 		// Select furthest-forward front runner
 		for (const strategy of [Strategy.Oonige, Strategy.Nige]) {
 			var umas = this.umas.filter(uma => uma.posKeepStrategy === strategy);
 
 			if (umas.length > 0) {
-				var uma = umas.reduce((max, uma) => {
-					return uma.pos > max.pos ? uma : max;
-				}, umas[0]);
-
-				return uma;
+				return RaceSolver.frontmostByPos(umas);
 			}
 		}
 
@@ -829,9 +835,7 @@ export class RaceSolver {
 			var umas = this.umas.filter(uma => StrategyHelpers.strategyMatches(uma.posKeepStrategy, strategy));
 
 			if (umas.length > 0) {
-				var uma = umas.reduce((max, uma) => {
-					return uma.pos > max.pos ? uma : max;
-				}, umas[0]);
+				var uma = RaceSolver.frontmostByPos(umas);
 
 				uma.pacerOverride = true;
 				uma.posKeepStrategy = Strategy.Nige;
@@ -1140,6 +1144,14 @@ export class RaceSolver {
 			return;
 		}
 
+		// Every exit path below records the same three fields the same way -- only whether it
+		// counts as a DistanceGap2/LaneGap2 exit (for the cascade rule further down) differs.
+		const exitLeadCompetition = (distanceExited: boolean) => {
+			this.leadCompetition = false;
+			this.leadCompetitionDistanceExited = distanceExited;
+			this.leadCompetitionEnd = this.pos;
+		};
+
 		// Duration is scaled by the runner's strategy-aptitude rank (game's CompeteTop
 		// parameter block; confirmed empirically by hakuraku.moe/notes/spot-struggle's
 		// replay-frame analysis -- see work-queue DYN-8). this.horse.strategyAptitude is
@@ -1154,8 +1166,7 @@ export class RaceSolver {
 		// shared by the whole group -- not an offset from where this uma personally triggered
 		// (see work-queue DYN-14).
 		if (this.leadCompetitionTimer.t >= leadCompeteDuration || this.pos >= this.leadCompetitionEnd) {
-			this.leadCompetition = false;
-			this.leadCompetitionEnd = this.pos;
+			exitLeadCompetition(false);
 			return;
 		}
 
@@ -1175,9 +1186,7 @@ export class RaceSolver {
 			// Cascade: the last struggler standing leaves only if every other participant left via
 			// this distance/lateral exit. Natural duration expiry does not cascade.
 			if (participants.every(u => u.leadCompetitionDistanceExited)) {
-				this.leadCompetition = false;
-				this.leadCompetitionDistanceExited = true;
-				this.leadCompetitionEnd = this.pos;
+				exitLeadCompetition(true);
 			}
 			return;
 		}
@@ -1190,9 +1199,7 @@ export class RaceSolver {
 		let lateralAll = this.laneMovementEnabled && activeParticipants.every(u => Math.abs(u.currentLane - this.currentLane) >= 0.416 * this.course.courseWidth);
 
 		if (behindAll || lateralAll) {
-			this.leadCompetition = false;
-			this.leadCompetitionDistanceExited = true;
-			this.leadCompetitionEnd = this.pos;
+			exitLeadCompetition(true);
 		}
 	}
 
@@ -1235,7 +1242,7 @@ export class RaceSolver {
 			return;
 		}
 
-		let frontmostUma = sameStrategyUmas.reduce((front, u) => u.pos > front.pos ? u : front);
+		let frontmostUma = RaceSolver.frontmostByPos(sameStrategyUmas);
 		let entryLaneGap = 0.165 * this.course.courseWidth;
 
 		// DistanceGap1/LaneGap1, measured from the frontmost uma of the style -- who is trivially

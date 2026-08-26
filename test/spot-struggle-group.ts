@@ -145,10 +145,25 @@ test('NigeCount/OonigeCount: 1 -- each style triggers once per race, independent
 
 // ===================== distance/lateral exit =====================
 
-function makeActiveParticipant(pos: number, strategy: Strategy, lane = 0) {
+// `end` defaults to Infinity (i.e. never exits via the duration/position cap) so callers testing
+// the distance/lateral exit branch don't each need their own `u.leadCompetitionEnd = Infinity;`
+// line to isolate it from the cap exit -- pass an explicit `end` (e.g. the real section-9 cap)
+// only when the cap itself is what's under test.
+function makeActiveParticipant(pos: number, strategy: Strategy, lane = 0, end = Infinity) {
 	const u = makeUma(pos, strategy, {lane});
 	u.leadCompetitionStart = 0;
 	u.leadCompetition = true;
+	u.leadCompetitionEnd = end;
+	return u;
+}
+
+// An uma who has already left a struggle before the test's exit() call under test runs -- mirrors
+// makeActiveParticipant() for the "already departed" half of a participants list.
+function makeExitedParticipant(pos: number, strategy: Strategy, distanceExited: boolean) {
+	const u = makeUma(pos, strategy);
+	u.leadCompetitionStart = 0;
+	u.leadCompetition = false;
+	u.leadCompetitionDistanceExited = distanceExited;
 	return u;
 }
 
@@ -156,7 +171,6 @@ test('distance exit (DistanceGap2) requires clearing every active participant, n
 	const x = makeActiveParticipant(400, Strategy.Nige);
 	const y = makeActiveParticipant(396, Strategy.Nige);
 	const z = makeActiveParticipant(394, Strategy.Nige); // evaluated uma: 6m behind x, but only 2m behind y
-	z.leadCompetitionEnd = Infinity; // isolate the distance-exit branch from the duration/cap exit
 	field(x, y, z);
 
 	exit(z);
@@ -173,7 +187,6 @@ test('distance exit (DistanceGap2) requires clearing every active participant, n
 test('lateral exit (LaneGap2)', t => {
 	const blocked = makeActiveParticipant(400, Strategy.Nige, 5.0);
 	const z1 = makeActiveParticipant(400, Strategy.Nige, 0);
-	z1.leadCompetitionEnd = Infinity;
 	field(blocked, z1);
 	exit(z1);
 	t.notOk(z1.leadCompetition, '5.0m lane gap (>= 0.416*11.25 = 4.68m) triggers the lateral exit');
@@ -181,7 +194,6 @@ test('lateral exit (LaneGap2)', t => {
 
 	const close = makeActiveParticipant(400, Strategy.Nige, 4.0);
 	const z2 = makeActiveParticipant(400, Strategy.Nige, 0);
-	z2.leadCompetitionEnd = Infinity;
 	field(close, z2);
 	exit(z2);
 	t.ok(z2.leadCompetition, '4.0m lane gap (< 4.68m) does not trigger it');
@@ -190,15 +202,8 @@ test('lateral exit (LaneGap2)', t => {
 
 test('cascade: the last struggler exits once every other participant left via the distance/lateral exit', t => {
 	const a = makeActiveParticipant(500, Strategy.Nige);
-	a.leadCompetitionEnd = Infinity;
-	const b = makeUma(480, Strategy.Nige); // already left
-	b.leadCompetitionStart = 0;
-	b.leadCompetition = false;
-	b.leadCompetitionDistanceExited = true;
-	const c = makeUma(470, Strategy.Nige);
-	c.leadCompetitionStart = 0;
-	c.leadCompetition = false;
-	c.leadCompetitionDistanceExited = true;
+	const b = makeExitedParticipant(480, Strategy.Nige, true);
+	const c = makeExitedParticipant(470, Strategy.Nige, true);
 	field(a, b, c);
 
 	exit(a);
@@ -209,11 +214,7 @@ test('cascade: the last struggler exits once every other participant left via th
 
 test('cascade does not fire from natural duration/position-cap expiry', t => {
 	const a = makeActiveParticipant(500, Strategy.Nige);
-	a.leadCompetitionEnd = Infinity;
-	const b = makeUma(480, Strategy.Nige); // left naturally, not via the distance exit
-	b.leadCompetitionStart = 0;
-	b.leadCompetition = false;
-	b.leadCompetitionDistanceExited = false;
+	const b = makeExitedParticipant(480, Strategy.Nige, false); // left naturally, not via the distance exit
 	field(a, b);
 
 	exit(a);
@@ -222,8 +223,7 @@ test('cascade does not fire from natural duration/position-cap expiry', t => {
 });
 
 test('the section-9 cap exit is never misreported as a distance exit', t => {
-	const a = makeActiveParticipant(800, Strategy.Nige);
-	a.leadCompetitionEnd = Math.floor(SECTION_LENGTH * 8); // 800 -- she has just reached the cap
+	const a = makeActiveParticipant(800, Strategy.Nige, 0, Math.floor(SECTION_LENGTH * 8)); // she has just reached the cap
 	const nearby = makeActiveParticipant(800, Strategy.Nige); // would also satisfy a (trivial) distance/lateral check
 	field(a, nearby);
 
