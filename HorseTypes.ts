@@ -30,6 +30,7 @@ export namespace StrategyHelpers {
 		assert(Strategy.hasOwnProperty(strategy));
 	}
 
+	// ANCHOR: strategy-matches-oonige-nige
 	export function strategyMatches(s1: Strategy, s2: Strategy) {
 		return s1 == s2 || (s1 == Strategy.Nige && s2 == Strategy.Oonige) || (s1 == Strategy.Oonige && s2 == Strategy.Nige);
 	}

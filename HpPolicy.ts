@@ -63,6 +63,7 @@ export class GameHpPolicy {
 	getStatusModifier(state: {positionKeepState: PositionKeepState, isRushed?: boolean, isDownhillMode?: boolean, leadCompetition?: boolean, posKeepStrategy?: Strategy}) {
 		let modifier = 1.0;
 
+		// ANCHOR: downhill-hp-modifier
 		if (state.isDownhillMode) {
 			modifier *= 0.4;
 		}

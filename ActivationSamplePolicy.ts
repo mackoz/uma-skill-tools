@@ -80,6 +80,7 @@ export abstract class DistributionRandomPolicy {
 
 	reconcile(other: ActivationSamplePolicy) { return other.reconcileDistributionRandom(this); }
 	reconcileImmediate(_: ActivationSamplePolicy) { return this; }
+	// ANCHOR: distribution-random-poisson-todo
 	reconcileDistributionRandom(other: ActivationSamplePolicy) {
 		// this is, strictly speaking, probably not the right thing to do
 		// probably this should be the joint probability distribution of `this` and `other`, but that is too complex to implement

@@ -8,6 +8,7 @@ import type { HpPolicy } from './HpPolicy';
 import { ApproximateCondition } from './ApproximateConditions';
 import { createBlockedSideCondition, createOvertakeCondition } from './SpecialConditions';
 
+// ANCHOR: cc-global-declare-fallback
 declare var CC_GLOBAL: boolean
 
 // for the browser builds, CC_GLOBAL is defined by esbuild as true/false
@@ -153,6 +154,7 @@ export const enum SkillType {
 	PowerUp = 3,
 	GutsUp = 4,
 	WisdomUp = 5,
+	// ANCHOR: skill-type-recovery-enum
 	Recovery = 9,
 	MultiplyStartDelay = 10,
 	SetStartDelay = 14,
@@ -279,6 +281,7 @@ export class RaceSolver {
 	onSkillActivate: (s: RaceSolver, skillId: string, perspective: Perspective) => void
 	onSkillDeactivate: (s: RaceSolver, skillId: string, perspective: Perspective) => void
 	sectionLength: number
+	// ANCHOR: umas-field-declaration
 	umas: RaceSolver[]
 	isPacer: boolean
 	pacerOverride: boolean
@@ -345,6 +348,7 @@ export class RaceSolver {
     targetLane: number
     laneChangeSpeed: number
     extraMoveLane: number
+    // ANCHOR: force-in-speed-field
     forceInSpeed: number
 
 	firstUmaInLateRace: boolean
@@ -468,6 +472,7 @@ export class RaceSolver {
 		this.rushedSection = -1;
 		this.rushedEnterPosition = -1;
 		this.rushedTimer = this.getNewTimer();
+		// ANCHOR: rushed-max-duration-init
 		this.rushedMaxDuration = 12.0;
 		this.rushedEscapeRolls = 0;
 
@@ -486,6 +491,7 @@ export class RaceSolver {
 		this.nonFullSpurtDelayDistance = null;
 		// Calculate rushed chance and determine if/when it activates
 		if (this.rushedKakari) {
+			// ANCHOR: init-rushed-state-call
 			this.initRushedState();
 		}
 
@@ -514,6 +520,7 @@ export class RaceSolver {
 		this.targetLane = initialLane;
 		this.laneChangeSpeed = 0.0;
 		this.extraMoveLane = -1.0;
+		// ANCHOR: force-in-speed-init
 		this.forceInSpeed = 0.0;
 
 		this.modifiers = {
@@ -545,12 +552,14 @@ export class RaceSolver {
 		this.lastSpurtTransition = -1;
 
 		this.sectionModifier = Array.from({length: 24}, () => {
+			// ANCHOR: section-randomness-wisdom-term
 			const max = this.horse.wisdom / 5500.0 * Math.log10(this.horse.wisdom * 0.1);
 			const factor = (max - 0.65 + this.sectionSpeedRng.random() * 0.65) / 100.0;
 			return baseSpeed(this.course) * factor;
 		});
 		this.sectionModifier.push(0.0);  // last tick after the race is done, or in a comparison in case one uma runs off the end of the track
 
+		// ANCHOR: hp-init-call
 		this.hp.init(this.horse);
 
 		this.baseAccel = ([0,1,2,0,1,2] as Phase[]).map((phase,i) => baseAccel(i > 2 ? UphillBaseAccel : BaseAccel, this.horse, phase));
@@ -579,6 +588,7 @@ export class RaceSolver {
 		
 		if (this.hillStart.length > 0 && this.hillStart[this.hillStart.length - 1] == 0) {
 			this.hillIdx = 0;
+			// ANCHOR: slope-per-init
 			this.slopePer = this.course.slopes[0].slope;
 			this.downhillTimer.t = 0;
 			this.downhillCheck(this.downhillRng[0].random());
@@ -600,13 +610,15 @@ export class RaceSolver {
 		const wisdomStat = this.horse.wisdom;
 		const rushedChance = Math.pow(6.5 / Math.log10(0.1 * wisdomStat + 1), 2) / 100;
 
+		// ANCHOR: self-control-rushed-chance-exception
 		// Check if horse has 自制心 (Self-Control) skill - ID 202161
 		// This reduces rushed chance by flat 3%
 		const hasSelfControl = this.pendingSkills.some(s => s.skillId === '202161');
 		const finalRushedChance = Math.max(0, rushedChance - (hasSelfControl ? 0.03 : 0));
-		
+
 		// Roll for rushed state
 		if (this.rushedRng.random() < finalRushedChance) {
+			// ANCHOR: rushed-section-roll
 			// Determine which section (2-9) the rushed state activates in
 			this.rushedSection = 2 + this.rushedRng.uniform(8);  // Random int from 2 to 9
 			this.rushedEnterPosition = this.sectionLength * this.rushedSection;
@@ -689,12 +701,14 @@ export class RaceSolver {
 		}
 		
 		this.updateHills();
+		// ANCHOR: update-phase-call-in-step
 		this.updatePhase();
 		this.updateRushedState();
 		this.processSkillActivations();
 		this.applyPositionKeepStates();
 		this.updatePositionKeepCoefficient();
 		this.updateCompeteFight();
+		// ANCHOR: lead-competition-check-in-step
 		this.updateLeadCompetition();
 		this.updateLastSpurtState();
 		this.updateTargetSpeed();
@@ -729,6 +743,7 @@ export class RaceSolver {
 			this.startDelayAccumulator = 0.0;
 		}
 
+		// ANCHOR: position-update-in-step
 		this.pos += displacement * dtAfterDelay;
 		this.hp.tick(this, dt);
 
@@ -750,6 +765,7 @@ export class RaceSolver {
 		const sideBlocked = this.getConditionValue("blocked_side") === 1;
 		const overtake = this.getConditionValue("overtake") === 1;
 
+		// ANCHOR: extra-move-lane-formula
 		if (this.extraMoveLane < 0.0 && this.isAfterFinalCornerOrInFinalStraight()) {
 			this.extraMoveLane = Math.min(currentLane / 0.1, this.course.maxLaneDistance) * 0.5 + (this.laneMovementRng.random() * 0.1);
 		}
@@ -816,6 +832,7 @@ export class RaceSolver {
 
 	getPacer(): RaceSolver | null {
 		// Select furthest-forward front runner
+		// ANCHOR: umas-filter-by-strategy-equality
 		for (const strategy of [Strategy.Oonige, Strategy.Nige]) {
 			var umas = this.umas.filter(uma => uma.posKeepStrategy === strategy);
 
@@ -832,6 +849,7 @@ export class RaceSolver {
 		}
 
 		// Otherwise, lucky pace (set pacerOverride)
+		// ANCHOR: umas-filter-by-strategy-matches
 		for (const strategy of [Strategy.Senkou, Strategy.Sasi, Strategy.Oikomi]) {
 			var umas = this.umas.filter(uma => StrategyHelpers.strategyMatches(uma.posKeepStrategy, strategy));
 
@@ -862,6 +880,7 @@ export class RaceSolver {
 	}
 
 	isOnlyFrontRunner(): boolean {
+		// ANCHOR: front-runners-filter
 		var frontRunners = this.umas.filter(uma => StrategyHelpers.strategyMatches(uma.posKeepStrategy, Strategy.Nige));
 		return frontRunners.length === 1 && frontRunners[0] === this;
 	}
@@ -909,8 +928,9 @@ export class RaceSolver {
 						var umas = this.getUmaByDistanceDescending();
 						var secondPlaceUma = umas[1];
 						var distanceAhead = pacer.pos - secondPlaceUma.pos;
+						// ANCHOR: speed-up-poskeep-entry-threshold
 						let threshold = myStrategy === Strategy.Oonige ? 17.5 : 4.5;
-						
+
 						if (this.posKeepNextTimer.t < 0) { return; }
 
 						if (distanceAhead < threshold && this.speedUpOvertakeWitCheck()) {
@@ -966,6 +986,7 @@ export class RaceSolver {
 					var umas = this.getUmaByDistanceDescending();
 					var secondPlaceUma = umas[1];
 					var distanceAhead = pacer.pos - secondPlaceUma.pos;
+					// ANCHOR: speed-up-poskeep-exit-threshold
 					let threshold = myStrategy === Strategy.Oonige ? 17.5 : 4.5;
 
 					if (distanceAhead >= threshold) {
@@ -1071,11 +1092,12 @@ export class RaceSolver {
 		}
 		
 		if (this.competeFight) {
+			// ANCHOR: duel-exit-hp-gate
 			if (this.hp.hpRatioRemaining() <= 0.05) {
 				this.competeFight = false;
 				this.competeFightEnd = this.pos;
 			}
-			
+
 			return;
 		}
 
@@ -1083,6 +1105,7 @@ export class RaceSolver {
 			return;
 		}
 
+		// ANCHOR: duel-entry-hp-gate
 		if (this.hp.hpRatioRemaining() < 0.15 || !this.isOnFinalStraight()) {
 			return;
 		}
@@ -1232,6 +1255,7 @@ export class RaceSolver {
 		// spot-struggle state written onto them by someone else's tick (their own per-tick
 		// processing never runs to unwind it, since updateLeadCompetition() returns immediately
 		// when leadCompetitionEnabled is false).
+		// ANCHOR: same-strategy-umas-filter
 		let sameStrategyUmas = this.umas.filter(u => u.posKeepStrategy === this.posKeepStrategy && u.leadCompetitionEnabled);
 
 		// NigeCount/OonigeCount: 1 -- one spot struggle per style per race, for the whole field.
@@ -1343,14 +1367,17 @@ export class RaceSolver {
 		this.targetSpeed += this.modifiers.targetSpeed.acc + this.modifiers.targetSpeed.err;
 
 		if (this.isDownhillMode) {
+			// ANCHOR: downhill-accel-bonus-formula
 			this.targetSpeed += 0.3 + this.slopePer / 100000.0;
 		} else if (this.hillIdx != -1 && this.slopePer > 0) {
 			// recalculating this every frame is actually measurably faster than calculating the penalty for each slope ahead of time, somehow
+			// ANCHOR: uphill-slope-penalty-formula
 			this.targetSpeed -= this.slopePer / 10000.0 * 200.0 / this.horse.power;
 			this.targetSpeed = Math.max(this.targetSpeed, this.minSpeed);
 		}
 
 		if (this.competeFight) {
+			// ANCHOR: duel-target-speed-bonus
 			this.targetSpeed += Math.pow(200 * this.horse.guts, 0.708) * 0.0001;
 		}
 
@@ -1360,6 +1387,7 @@ export class RaceSolver {
 		}
 
 		if (this.laneChangeSpeed > 0.0 && this.activeLaneMovementSkills.length > 0) {
+			// ANCHOR: lane-change-speed-modifier
 			const moveLaneModifier = Math.sqrt(0.0002 * this.horse.power);
 			this.targetSpeed += moveLaneModifier;
 		}
@@ -1378,10 +1406,12 @@ export class RaceSolver {
 		this.accel += this.modifiers.accel.acc + this.modifiers.accel.err;
 
 		if (this.competeFight) {
+			// ANCHOR: duel-accel-bonus
 			this.accel += Math.pow(160 * this.horse.guts, 0.59) * 0.0001;
 		}
 	}
 
+	// ANCHOR: downhill-mode-activation-gate
 	downhillCheck(roll: number) {
 		if (this.slopePer < 0 && roll < this.horse.wisdom * 0.0004) {
 			this.downhillActivations.push([this.pos, this.pos]);
@@ -1392,6 +1422,7 @@ export class RaceSolver {
 	updateHills() {
 		if (this.hillIdx == -1 && this.hillStart.length > 0 && this.pos >= this.hillStart[this.hillStart.length - 1]) {
 			this.hillIdx = this.nHills - this.hillStart.length;
+			// ANCHOR: slope-per-update
 			this.slopePer = this.course.slopes[this.hillIdx].slope;
 			this.downhillTimer.t = 0;
 			this.downhillCheck(this.downhillRng[this.hillIdx].random());
@@ -1576,6 +1607,7 @@ export class RaceSolver {
 				});
 				break;
 			case SkillType.Recovery:
+				// ANCHOR: activate-count-heal-increment
 				if (s.perspective == Perspective.Self) ++this.activateCountHeal;
 				this.hp.recover(ef.modifier);
 				if (this.phase >= 2 && !this.isLastSpurt) {
