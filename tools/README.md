@@ -91,11 +91,10 @@ Builds all 9 horses from a single decoded replay (via `parseReplay.ts`), pins ev
 skill activation to its replay position via `RaceSolverBuilder.addSkillAtPosition`, cross-`initUmas()`s
 them the way `umalator/compare.ts` does with a real pair, and diffs simulated distance/speed/HP
 against the replay's own recorded values, sampled at the replay's (uneven) timestamps. `npx
-ts-node tools/replay/replayDiff.ts <race.json>` prints per-horse error stats. Requires
-`TS_NODE_TRANSPILE_ONLY=1` — `RaceSolverBuilder.ts` currently fails a strict per-file ts-node
-typecheck on two pre-existing, unrelated issues (HP-5's dead `EnhancedHpPolicy` import, and a
-second one found while building this tool — see its own ticket). Also built for PIPE-21;
-documents its own modeling simplifications (dropped never-activated skills, no cross-horse
+ts-node tools/replay/replayDiff.ts <race.json>` prints per-horse error stats. Runs under plain
+`ts-node` — the `RaceSolverBuilder.ts` per-file typecheck failures this used to hit (HP-5's dead
+`EnhancedHpPolicy` import, PIPE-22's missing `HorseDesc.skills` field) are both fixed. Also built
+for PIPE-21; documents its own modeling simplifications (dropped never-activated skills, no cross-horse
 debuff targeting, static order assumption) in its file header — read those before trusting a
 diff number at face value.
 
