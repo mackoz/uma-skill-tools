@@ -70,6 +70,45 @@ Used for calculating the difference between various combinations of speed and gu
 
 The output of speedguts.ts is intended to be piped into speedguts_colormesh.py for visualization.
 
+# replay/parseReplay.ts
+
+Decodes hakuraku-format saved-race JSON (the Global-client `simDataBase64` blob: per-frame
+distance/speed/HP/lane/blocking/temptation for every horse, per-horse finish results, and the
+full skill/event stream) into plain TypeScript objects, for checking this engine against real
+game output. Built for [PIPE-21](../../plans/work-queue/in-progress/pipe-21.md) in
+`uma-tools-plans` — see that ticket for the corpus this was verified against and what it's being
+used for. `npx ts-node tools/replay/parseReplay.ts <race.json>` prints a summary (header fields,
+horse results, per-horse skill activation timeline); `npx ts-node tools/replay/parseReplay.ts
+--all <dir>` sweeps a directory and reports parse success/failure per file. `deserialize()`,
+`parseReplayFile()`, and `skillTimeline()` are also exported for use from other scripts. Only
+implements the Global-client parser path (hakuraku also has a separate JP-client parser this
+doesn't port — every file this was tested against decoded cleanly on the Global path, so the JP
+path wasn't needed).
+
+# replay/replayDiff.ts
+
+Builds all 9 horses from a single decoded replay (via `parseReplay.ts`), pins every recorded
+skill activation to its replay position via `RaceSolverBuilder.addSkillAtPosition`, cross-`initUmas()`s
+them the way `umalator/compare.ts` does with a real pair, and diffs simulated distance/speed/HP
+against the replay's own recorded values, sampled at the replay's (uneven) timestamps. `npx
+ts-node tools/replay/replayDiff.ts <race.json>` prints per-horse error stats. Requires
+`TS_NODE_TRANSPILE_ONLY=1` — `RaceSolverBuilder.ts` currently fails a strict per-file ts-node
+typecheck on two pre-existing, unrelated issues (HP-5's dead `EnhancedHpPolicy` import, and a
+second one found while building this tool — see its own ticket). Also built for PIPE-21;
+documents its own modeling simplifications (dropped never-activated skills, no cross-horse
+debuff targeting, static order assumption) in its file header — read those before trusting a
+diff number at face value.
+
+# replay/measureDownhill.ts
+
+Corpus-level measurement, no simulator run: cross-checks the engine's downhill accel-mode HP
+and speed effects against real replay data over a directory of same-course replays, using
+hakuraku's own HP-drain-based downhill-mode detector (independent of the speed effect being
+measured). `npx ts-node tools/replay/measureDownhill.ts <dir>`. Written for PIPE-21's SPD-7
+measurement pass; documents in its own comments why the speed-side result is confounded (other
+low-HP-consumption states like PaceDown get caught by the same threshold) and shouldn't be
+read as decisive on its own.
+
 # make_skill_data.pl and make_skillnames.pl
 
 Used to generate the data/skill_data.json and data/skillnames.json files. make_skill_data.pl takes a path to master.mdb; make_skillnames.pl takes two positional args, a path to master.mdb (for JP names) followed by a file obtained from a GameTora quasi-API thing (for EN names).
