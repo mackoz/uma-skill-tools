@@ -134,7 +134,6 @@ export class OrOperator {
 		this.samplePolicy = left.samplePolicy.reconcile(right.samplePolicy);
 	}
 
-	// ANCHOR: or-operator-dynamic-condition-fixme
 	apply(regions: RegionList, course: CourseData, horse: HorseParameters, extra: RaceParameters) {
 		const [leftval, leftcond] = this.left.apply(regions, course, horse, extra);
 		const [rightval, rightcond] = this.right.apply(regions, course, horse, extra);
@@ -432,7 +431,6 @@ export const Conditions: {[cond: string]: Condition} = Object.freeze({
 			return [regions, (s: RaceState) => s.activateCount[2] >= n] as [RegionList, DynamicCondition];
 		}
 	}),
-	// ANCHOR: activate-count-heal-condition
 	activate_count_heal: immediate({
 		filterGte(regions: RegionList, n: number, _0: CourseData, _1: HorseParameters, extra: RaceParameters) {
 			return [regions, (s: RaceState) => s.activateCountHeal >= n] as [RegionList, DynamicCondition];
@@ -547,7 +545,6 @@ export const Conditions: {[cond: string]: Condition} = Object.freeze({
 				return new RegionList();
 			}
 		},
-		// ANCHOR: corner-filter-neq-assert
 		filterNeq(regions: RegionList, cornerNum: number, course: CourseData, _: HorseParameters, extra: RaceParameters) {
 			assert(cornerNum == 0, 'only supports corner!=0');
 			const corners = course.corners.map(c => new Region(c.start, c.start + c.length));
