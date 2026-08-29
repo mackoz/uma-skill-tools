@@ -1,10 +1,6 @@
-// Run with TS_NODE_TRANSPILE_ONLY=1 (RaceSolverBuilder.ts currently fails a strict
-// ts-node per-file typecheck on two pre-existing, unrelated issues -- HP-5's dead
-// EnhancedHpPolicy import, and a second, newly-found issue where HorseDesc's declared
-// type is missing a `skills` field that setupPacer() reads and production callers
-// always supply in practice; see the new ticket this session filed alongside HP-5).
-// Neither is a real runtime bug in the path this script exercises (no pacer is built
-// here), so transpile-only is a safe, minimal workaround, not a masked failure.
+// Runs under plain `ts-node` -- no TS_NODE_TRANSPILE_ONLY needed. RaceSolverBuilder.ts
+// used to fail ts-node's per-file typecheck on two pre-existing issues (HP-5's dead
+// EnhancedHpPolicy import, PIPE-22's HorseDesc missing a `skills` field), both fixed.
 //
 // PIPE-21 step 2: one-race physics diff. Build all 9 horses from a single replay, pin
 // every skill to activate at its recorded position (never chase RNG parity -- see

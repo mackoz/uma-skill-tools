@@ -32,7 +32,7 @@ Guidance for working in this repo. It's the race-simulation engine — no UI, no
 
 ## `test/`, `tools/`, and pre-existing `tsc` errors
 
-As of 2026-08-20, `npx tsc --noEmit` reports **14 pre-existing errors**: two in `RaceSolverBuilder.ts`, five across `test/`, and seven across `tools/gain.ts`/`tools/dump.ts`. The causes include a dangling `EnhancedHpPolicy` import, missing `HorseDesc.mood` values in test fixtures, and CLI tools calling an older `RaceSolver` constructor shape. These predate this documentation update and aren't part of the bundled engine surface (`mackoz/uma-tools`'s builds only pull in the top-level `.ts` files, not `test/`/`tools/`). Don't treat a clean browser build as proof these pass, and don't feel obligated to fix them incidentally while touching something else — they're a separate cleanup task.
+As of 2026-08-29, `npx tsc --noEmit` reports **12 pre-existing errors**: five across `test/`, and seven across `tools/gain.ts`/`tools/dump.ts`. The causes include missing `HorseDesc.mood` values in test fixtures and CLI tools calling an older `RaceSolver` constructor shape. These predate this documentation update and aren't part of the bundled engine surface (`mackoz/uma-tools`'s builds only pull in the top-level `.ts` files, not `test/`/`tools/`). Don't treat a clean browser build as proof these pass, and don't feel obligated to fix them incidentally while touching something else — they're a separate cleanup task. (Previously 14: `RaceSolverBuilder.ts`'s two errors — a dangling `EnhancedHpPolicy` import and a `HorseDesc` missing the `skills` field `setupPacer()` reads — were fixed by HP-5/PIPE-22.)
 
 ## Running tests
 

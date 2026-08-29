@@ -8,7 +8,6 @@ import { getParser } from './ConditionParser';
 import { RaceSolver, RaceState, PendingSkill, DynamicCondition, SkillType, SkillRarity, SkillEffect, Perspective, PosKeepMode } from './RaceSolver';
 import { Mood, GroundCondition, Weather, Season, Time, Grade, RaceParameters } from './RaceParameters';
 import { GameHpPolicy, NoopHpPolicy } from './HpPolicy';
-import { EnhancedHpPolicy } from './EnhancedHpPolicy';
 
 import skills from './data/skill_data.json';
 
@@ -25,6 +24,7 @@ export interface HorseDesc {
 	surfaceAptitude: string | Aptitude
 	strategyAptitude: string | Aptitude
 	mood: Mood
+	skills?: string[]
 }
 
 const GroundSpeedModifier = Object.freeze([
@@ -550,7 +550,7 @@ export class RaceSolverBuilder {
 		let pacerSkillData: SkillData[] = [];
 		
 		if (pacerBaseHorse) {
-			this._pacerSkillIds = horse.skills;
+			this._pacerSkillIds = horse.skills ?? [];
 			const makePacerSkill = buildSkillData.bind(null, pacerBaseHorse, this._raceParams, this._course, wholeCourse, this._parser);
 			pacerSkillData = this._pacerSkillIds.flatMap(id => makePacerSkill(id, Perspective.Self));
 			this._pacerSkillData = pacerSkillData;

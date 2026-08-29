@@ -2,7 +2,7 @@
 
 Run TypeScript tools through the repository-local dependency, for example `npx ts-node tools/skillgrep.ts --help` from the repo root (or `npx ts-node skillgrep.ts --help` from this directory).
 
-At commit `f6fb9d0`, `skillgrep.ts` and `compare.ts` compile and show their help normally. `gain.ts`, `dump.ts`, and `speedguts.ts` are currently blocked before execution by pre-existing TypeScript/API drift: the first two still construct `RaceSolver` with the removed `pacer` property, `dump.ts` also references removed pacing fields, and `speedguts.ts` reaches the dangling `EnhancedHpPolicy` import through `RaceSolverBuilder`. Their sections below document the intended interfaces, but those commands need code repair before they can be used. See `../CLAUDE.md` for the complete 14-error typecheck baseline.
+As of HP-5/PIPE-22 (`RaceSolverBuilder.ts`'s dead `EnhancedHpPolicy` import and missing `HorseDesc.skills` field both fixed), `skillgrep.ts`, `compare.ts`, and `speedguts.ts` all compile and show their help normally. `gain.ts` and `dump.ts` are still blocked before execution by pre-existing TypeScript/API drift unrelated to HP-5: both still construct `RaceSolver` with the removed `pacer` property, and `dump.ts` also references removed pacing fields. Their sections below document the intended interfaces, but those commands need code repair before they can be used. See `../CLAUDE.md` for the complete 12-error typecheck baseline.
 
 # skillgrep.ts
 
@@ -91,11 +91,10 @@ Builds all 9 horses from a single decoded replay (via `parseReplay.ts`), pins ev
 skill activation to its replay position via `RaceSolverBuilder.addSkillAtPosition`, cross-`initUmas()`s
 them the way `umalator/compare.ts` does with a real pair, and diffs simulated distance/speed/HP
 against the replay's own recorded values, sampled at the replay's (uneven) timestamps. `npx
-ts-node tools/replay/replayDiff.ts <race.json>` prints per-horse error stats. Requires
-`TS_NODE_TRANSPILE_ONLY=1` — `RaceSolverBuilder.ts` currently fails a strict per-file ts-node
-typecheck on two pre-existing, unrelated issues (HP-5's dead `EnhancedHpPolicy` import, and a
-second one found while building this tool — see its own ticket). Also built for PIPE-21;
-documents its own modeling simplifications (dropped never-activated skills, no cross-horse
+ts-node tools/replay/replayDiff.ts <race.json>` prints per-horse error stats. Runs under plain
+`ts-node` — the `RaceSolverBuilder.ts` per-file typecheck failures this used to hit (HP-5's dead
+`EnhancedHpPolicy` import, PIPE-22's missing `HorseDesc.skills` field) are both fixed. Also built
+for PIPE-21; documents its own modeling simplifications (dropped never-activated skills, no cross-horse
 debuff targeting, static order assumption) in its file header — read those before trusting a
 diff number at face value.
 
