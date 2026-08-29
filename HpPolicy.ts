@@ -67,6 +67,7 @@ export class GameHpPolicy {
 			modifier *= 0.4;
 		}
 		
+		// ANCHOR: lead-competition-hp-modifier
 		if (state.leadCompetition) {
 			const isOonige = state.posKeepStrategy === Strategy.Oonige;
 			if (state.isRushed) {

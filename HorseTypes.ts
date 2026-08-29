@@ -7,6 +7,7 @@ export const enum Aptitude { S, A, B, C, D, E, F, G }
 // scaling wisdom in buildAdjustedStats() (RaceSolverBuilder.ts) and scaling spot-struggle
 // duration in updateLeadCompetition() (RaceSolver.ts). Matches the game's own CompeteTop
 // parameter block (S 1.1 / A 1.0 / B 0.85 / C 0.75 / D 0.6 / E 0.4 / F 0.2 / G 0.1).
+// ANCHOR: strategy-proficiency-modifier
 export const StrategyProficiencyModifier = Object.freeze([1.1, 1.0, 0.85, 0.75, 0.6, 0.4, 0.2, 0.1]);
 
 export interface HorseParameters {
@@ -18,6 +19,7 @@ export interface HorseParameters {
 	readonly strategy: Strategy
 	readonly distanceAptitude: Aptitude
 	readonly surfaceAptitude: Aptitude
+	// ANCHOR: horse-params-strategy-aptitude
 	readonly strategyAptitude: Aptitude
 	readonly rawStamina: number
 	readonly rawWisdom: number
