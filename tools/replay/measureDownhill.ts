@@ -12,7 +12,7 @@ import { CourseHelpers } from '../../CourseData';
 import { parseReplayFile } from './parseReplay';
 
 // hakuraku's reference HP consumption formula (raceConstants.ts / speedCalculations.ts) is
-// bit-for-bit the same formula as this engine's own HpPolicy.ts:66,88-90 --
+// bit-for-bit the same formula as this engine's own HpPolicy.ts:46,89-92 --
 // baseSpeed = 20 - (dist-2000)/1000, consumption = 20*(v-baseSpeed+12)^2/144. Cross-checking
 // against our own formula here is itself a useful sanity check, not just borrowed convenience.
 function baseSpeed(courseDistance: number) { return 20.0 - (courseDistance - 2000) / 1000.0; }
@@ -69,7 +69,7 @@ function run(dir: string) {
 	console.log(`course ${courseSetId}, ${files.length} files, ${samples.length} downhill-band samples`);
 	console.log(`classified active (ratio<${DOWNHILL_HP_RATIO_THRESHOLD}): ${active.length}, inactive: ${inactive.length}`);
 
-	console.log('\n--- HP-ratio cross-check (engine predicts 0.4x during downhill, HpPolicy.ts:69) ---');
+	console.log('\n--- HP-ratio cross-check (engine predicts 0.4x during downhill, HpPolicy.ts:67) ---');
 	console.log('active-frame ratio stats:', stats(active.map(s => s.ratio)));
 	const deep = samples.filter(s => s.ratio < 0.5); // less likely contaminated by non-downhill low-HP-consumption states (e.g. PaceDown, 0.6x) crossing the 0.8 threshold by chance
 	console.log(`deep-active (ratio<0.5, less likely contaminated by other low-consumption states like PaceDown's 0.6x): n=${deep.length}, mean=${(deep.reduce((a, b) => a + b.ratio, 0) / deep.length).toFixed(4)}`);

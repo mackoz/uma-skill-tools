@@ -34,15 +34,19 @@ import * as path from 'path';
 import { RaceSolverBuilder, HorseDesc } from '../../RaceSolverBuilder';
 import { RaceSolver } from '../../RaceSolver';
 import { Strategy, Aptitude } from '../../HorseTypes';
-import { GroundCondition, Weather, Season } from '../../RaceParameters';
 import { CourseHelpers } from '../../CourseData';
 import skillData from '../../data/skill_data.json';
 
 import { parseReplayFile, ParsedReplay, skillTimeline, Frame, HorseFrame } from './parseReplay';
 
-const GROUND_MAP: Record<string, GroundCondition> = {Good: GroundCondition.Good, Yielding: GroundCondition.Yielding, Soft: GroundCondition.Soft, Heavy: GroundCondition.Heavy};
-const WEATHER_MAP: Record<string, Weather> = {Sunny: Weather.Sunny, Cloudy: Weather.Cloudy, Rainy: Weather.Rainy, Snowy: Weather.Snowy};
-const SEASON_MAP: Record<string, Season> = {Spring: Season.Spring, Summer: Season.Summer, Fall: Season.Autumn, Autumn: Season.Autumn, Winter: Season.Winter, Sakura: Season.Sakura};
+// .ground()/.weather()/.season() (RaceSolverBuilder.ts:479-490) parse a raw string themselves
+// (case-insensitive, throw loudly on garbage) via parseGroundCondition/parseWeather/parseSeason
+// (RaceSolverBuilder.ts:105-139) -- delegate to those instead of re-mapping by hand, so an
+// unrecognized value throws instead of silently becoming undefined. The one normalization still
+// needed: parseSeason only accepts "AUTUMN", not the replay's "Fall".
+function normalizeSeason(season: string): string {
+	return season === 'Fall' ? 'Autumn' : season;
+}
 
 function replayAptitudeToEngine(replayInt: number): Aptitude {
 	// engine enum is descending (S=0..G=7); replay ints are ascending (1=G..8=S) -- confirmed
@@ -123,9 +127,6 @@ function run(replayPath: string) {
 	const {json, parsed} = parseReplayFile(replayPath);
 	const courseSetId = json.raceCourseSet.id;
 	const course = CourseHelpers.getCourse(courseSetId);
-	const ground = GROUND_MAP[json.groundCondition];
-	const weather = WEATHER_MAP[json.weather];
-	const season = SEASON_MAP[json.season];
 	const timeline = skillTimeline(parsed);
 
 	// finish order as a static order-condition proxy (ADR-0001 -- the engine never live-reads
@@ -141,41 +142,38 @@ function run(replayPath: string) {
 			.seed(json.randomSeed >>> 0) // does NOT reproduce real activation timing -- see file header
 			.mode('compare') // without this the builder attaches NoopHpPolicy, not GameHpPolicy (RaceSolverBuilder.ts:879) -- HP would silently read as NaN
 			.course(courseSetId)
-			.mood(desc.mood)
-			.ground(ground)
-			.weather(weather)
-			.season(season)
+			.ground(json.groundCondition)
+			.weather(json.weather)
+			.season(normalizeSeason(json.season))
 			.numUmas(parsed.horseNum)
 			.order(parsed.horseResult[h].finishOrder + 1, parsed.horseResult[h].finishOrder + 1)
 			.horse(desc);
 
 		const activations = timeline.get(h) || [];
 		const equipped = new Set<number>((raceHorse.responseHorseData.skill_array || []).map((s: any) => s.skill_id));
-		let pinned = 0;
-		const skippedUnregistered: string[] = [];
+		// addSkillAtPosition (RaceSolverBuilder.ts:745-748) only pushes onto an internal list --
+		// condition parsing happens later, all at once, inside build()'s flatMap. It structurally
+		// cannot throw here, so there is no per-skill isolation to catch: one bad condition among
+		// N recorded activations fails the whole horse's build, reported below via the outer catch
+		// around g.next(). Don't wrap this call in a try/catch that implies otherwise.
 		for (const a of activations) {
 			if (!(String(a.skillId) in (skillData as any))) continue; // shouldn't happen per PIPE-21's research, but don't crash the run
 			const pos = distanceAtTime(parsed.frame, h, a.time);
-			try {
-				// verify addSkillAtPosition doesn't throw at build time (unregistered condition names etc)
-				b.addSkillAtPosition(String(a.skillId), pos);
-				pinned++;
-			} catch (e) {
-				skippedUnregistered.push(`${a.skillId}: ${(e as Error).message}`);
-			}
+			b.addSkillAtPosition(String(a.skillId), pos);
 		}
 
 		builders.push(b);
 		diffResults.push({
 			horseIndex: h, name: raceHorse.charaName,
-			skillsInBuild: equipped.size, skillsActivated: activations.length, skillsPinned: pinned,
-			skillsSkippedUnregisteredCondition: skippedUnregistered, samples: [],
+			skillsInBuild: equipped.size, skillsActivated: activations.length, skillsPinned: activations.length,
+			skillsSkippedUnregisteredCondition: [], samples: [],
 		});
 	}
 
-	// build() is a generator; addSkillAtPosition may only actually throw when the generator
-	// is driven (condition parsing happens at build-time inside the skill-data lookup, but
-	// activation-window construction can defer errors to first .next()) -- guard both points.
+	// build() is a generator; condition parsing (including the unregistered-condition-name
+	// throw) happens inside it or on the generator's first .next() -- this is the one place
+	// a bad skill among a horse's pinned activations can actually surface, and it fails the
+	// whole horse's build, not just that one skill.
 	const solvers: (RaceSolver | null)[] = builders.map((b, h) => {
 		try {
 			const g = b.build();
