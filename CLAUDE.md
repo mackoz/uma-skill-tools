@@ -12,7 +12,7 @@ Guidance for working in this repo. It's the race-simulation engine — no UI, no
 
 ## Branching & PRs
 
-- **One open PR in this repo at a time.** Before creating a branch, check for an existing open PR/branch covering the same area (`gh pr list`) and push to that branch instead of branching off the default branch again.
+- **Prefer one open PR in this repo at a time — soft guidance, not a hard rule.** Before creating a branch, check for an existing open PR/branch covering the same area (`gh pr list`) and push to that branch instead of branching off the default branch again, when the new work is genuinely the same thread. If it isn't (a second, unrelated PR is really warranted), that's fine — just flag it and confirm with the user before opening it, rather than opening a second PR silently.
 - A PR merged here isn't done until `mackoz/uma-tools` bumps its submodule gitlink (see the workflow above).
 
 ## Hard rules
