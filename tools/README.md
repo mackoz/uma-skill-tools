@@ -2,7 +2,7 @@
 
 Run TypeScript tools through the repository-local dependency, for example `npx ts-node tools/skillgrep.ts --help` from the repo root (or `npx ts-node skillgrep.ts --help` from this directory).
 
-At commit `f6fb9d0`, `skillgrep.ts` and `compare.ts` compile and show their help normally. `gain.ts`, `dump.ts`, and `speedguts.ts` are currently blocked before execution by pre-existing TypeScript/API drift: the first two still construct `RaceSolver` with the removed `pacer` property, `dump.ts` also references removed pacing fields, and `speedguts.ts` reaches the dangling `EnhancedHpPolicy` import through `RaceSolverBuilder`. Their sections below document the intended interfaces, but those commands need code repair before they can be used. See `../CLAUDE.md` for the complete 14-error typecheck baseline.
+As of HP-5/PIPE-22 (`RaceSolverBuilder.ts`'s dead `EnhancedHpPolicy` import and missing `HorseDesc.skills` field both fixed), `skillgrep.ts`, `compare.ts`, and `speedguts.ts` all compile and show their help normally. `gain.ts` and `dump.ts` are still blocked before execution by pre-existing TypeScript/API drift unrelated to HP-5: both still construct `RaceSolver` with the removed `pacer` property, and `dump.ts` also references removed pacing fields. Their sections below document the intended interfaces, but those commands need code repair before they can be used. See `../CLAUDE.md` for the complete 12-error typecheck baseline.
 
 # skillgrep.ts
 
