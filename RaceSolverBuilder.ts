@@ -198,6 +198,7 @@ export function buildBaseStats(horseDesc: HorseDesc, mood: Mood) {
 export function buildAdjustedStats(baseStats: HorseParameters, course: CourseData, ground: GroundCondition) {
 	const raceCourseModifier = CourseHelpers.courseSpeedModifier(course, baseStats);
 
+	// ANCHOR: adjusted-stats-return
 	return Object.freeze({
 		speed: Math.max(baseStats.speed * raceCourseModifier + GroundSpeedModifier[course.surface][ground], 1),
 		stamina: baseStats.stamina,

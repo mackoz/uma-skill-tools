@@ -393,6 +393,7 @@ export class RaceSolver {
 		laneMovement?: boolean,
 	}) {
 		// clone since green skills may modify the stat values
+		// ANCHOR: solver-horse-clone
 		this.horse = Object.assign({}, params.horse);
 		this.course = params.course;
 		this.hp = params.hp;
@@ -838,6 +839,7 @@ export class RaceSolver {
 				var uma = RaceSolver.frontmostByPos(umas);
 
 				uma.pacerOverride = true;
+				// ANCHOR: pacer-promotion-nige
 				uma.posKeepStrategy = Strategy.Nige;
 
 				return uma;
@@ -849,6 +851,7 @@ export class RaceSolver {
 		var pacer = this.umas.find(uma => uma.isPacer);
 
 		if (pacer) {
+			// ANCHOR: virtual-pacemaker-nige
 			pacer.posKeepStrategy = Strategy.Nige;
 			return pacer;
 		}
@@ -1160,6 +1163,7 @@ export class RaceSolver {
 		// engine only has one scalar aptitude per horse, not a per-strategy table, so there
 		// is no better value available -- torena-sim's independent implementation makes the
 		// same simplification (self.aptitudes.strategy, a single scalar).
+		// ANCHOR: spot-struggle-duration
 		let leadCompeteDuration = Math.pow(700 * this.horse.guts, 0.5) * 0.012 * StrategyProficiencyModifier[this.horse.strategyAptitude];
 
 		// leadCompetitionEnd is EndSection: 9, i.e. the absolute position where section 9 starts,
@@ -1351,6 +1355,7 @@ export class RaceSolver {
 		}
 
 		if (this.leadCompetition) {
+			// ANCHOR: spot-struggle-target-speed
 			this.targetSpeed += Math.pow(500 * this.horse.guts, 0.6) * 0.0001;
 		}
 
