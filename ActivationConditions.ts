@@ -134,6 +134,7 @@ export class OrOperator {
 		this.samplePolicy = left.samplePolicy.reconcile(right.samplePolicy);
 	}
 
+	// ANCHOR: or-operator-dynamic-condition-fixme
 	apply(regions: RegionList, course: CourseData, horse: HorseParameters, extra: RaceParameters) {
 		const [leftval, leftcond] = this.left.apply(regions, course, horse, extra);
 		const [rightval, rightcond] = this.right.apply(regions, course, horse, extra);
@@ -412,6 +413,7 @@ export const Conditions: {[cond: string]: Condition} = Object.freeze({
 			// so resolve this by estimating where the skill can't possibly activate and then statically filtering that
 			// area out. due to the need to accelerate as well as factors like pace down etc, baseSpeed * t typically
 			// overestimates the distance traveled so use 0.85 * baseSpeed * t instead.
+			// ANCHOR: accumulatetime-region-estimate
 			const baseSpeed = 20.0 - (course.distance - 2000) / 1000.0;
 			const rest = new Region(0.85 * baseSpeed * t, course.distance);
 			return [regions.rmap(r => r.intersect(rest)), (s: RaceState) => s.accumulatetime.t >= t] as [RegionList, DynamicCondition];
@@ -430,6 +432,7 @@ export const Conditions: {[cond: string]: Condition} = Object.freeze({
 			return [regions, (s: RaceState) => s.activateCount[2] >= n] as [RegionList, DynamicCondition];
 		}
 	}),
+	// ANCHOR: activate-count-heal-condition
 	activate_count_heal: immediate({
 		filterGte(regions: RegionList, n: number, _0: CourseData, _1: HorseParameters, extra: RaceParameters) {
 			return [regions, (s: RaceState) => s.activateCountHeal >= n] as [RegionList, DynamicCondition];
@@ -544,6 +547,7 @@ export const Conditions: {[cond: string]: Condition} = Object.freeze({
 				return new RegionList();
 			}
 		},
+		// ANCHOR: corner-filter-neq-assert
 		filterNeq(regions: RegionList, cornerNum: number, course: CourseData, _: HorseParameters, extra: RaceParameters) {
 			assert(cornerNum == 0, 'only supports corner!=0');
 			const corners = course.corners.map(c => new Region(c.start, c.start + c.length));
@@ -551,6 +555,7 @@ export const Conditions: {[cond: string]: Condition} = Object.freeze({
 		}
 	}),
 	corner_count: valueFilter((course: CourseData, _: HorseParameters, extra: RaceParameters) => course.corners.length),
+	// ANCHOR: corner-random-should-not-be-random-fixme
 	// FIXME this shouldn't actually be random, since in cases like corner_random==1@corner_random==2 it should sample
 	// only from the first corner and not from the combined regions, so it needs its own sample policy
 	// actually, that's slightly annoying to handle since corners come in back-to-back pairs, so their regions will
@@ -563,6 +568,7 @@ export const Conditions: {[cond: string]: Condition} = Object.freeze({
 			// FIXME annoying hack for the corner skills. TEMPORARY. see the note above for why we do this. this condition is
 			// considerably more important in global than in jp (since early global does not have all_corner_random)
 			// these are all the corner_random==1@corner_random==2@corner_random==3@corner_random==4 skills
+			// ANCHOR: corner-random-whitelist
 			if ([
 				'200331', '200332', '200333', '200341', '200342', '200343', '200351', '200352', '200353',
 				'200971', '200972', '201041', '201042', '201111', '201112', '201181', '201182',
@@ -662,6 +668,7 @@ export const Conditions: {[cond: string]: Condition} = Object.freeze({
 			return Math.min(course.distance % 400, 1) != flag ? regions : new RegionList();
 		}
 	}),
+	// ANCHOR: is-badstart-condition
 	is_badstart: immediate({
 		filterEq(regions: RegionList, flag: number, _0: CourseData, _1: HorseParameters, extra: RaceParameters) {
 			assert(flag == 0 || flag == 1, 'must be is_badstart==0 or is_badstart==1');
@@ -808,6 +815,7 @@ export const Conditions: {[cond: string]: Condition} = Object.freeze({
 		}
 	}),
 	motivation: valueFilter((_0: CourseData, _1: HorseParameters, extra: RaceParameters) => extra.mood + 3),  // go from -2 to 2 to 1-5 scale
+	// ANCHOR: near-count-condition
 	near_count: noopErlangRandom(2.0, 2.0),
 	order: orderFilter((pos: number, _: number) => pos),
 	order_rate: orderFilter((rate: number, numUmas: number) => Math.round(numUmas * (rate / 100.0))),
@@ -826,6 +834,7 @@ export const Conditions: {[cond: string]: Condition} = Object.freeze({
 	overtake_target_time: noopErlangRandom(3, 2.0),
 	phase: {
 		samplePolicy: ImmediatePolicy,
+		// ANCHOR: phase-fudge-skill-whitelist
 		filterEq(regions: RegionList, phase: number, course: CourseData, _: HorseParameters, extra: RaceParameters) {
 			CourseHelpers.assertIsPhase(phase);
 			// add a little bit to the end to account for the fact that phase check happens later than skill activations
@@ -939,6 +948,7 @@ export const Conditions: {[cond: string]: Condition} = Object.freeze({
 		filterGt: notSupported,
 		filterGte: notSupported
 	},
+	// ANCHOR: popularity-condition
 	popularity: noopImmediate,
 	post_number: (function () {
 		function gateBlock(s: RaceState, numUmas: number) {
@@ -1007,7 +1017,9 @@ export const Conditions: {[cond: string]: Condition} = Object.freeze({
 	running_style_count_oikomi_otherself: valueFilter(
 		(_: CourseData, horse: HorseParameters, extra: RaceParameters) => +StrategyHelpers.strategyMatches(horse.strategy, Strategy.Oikomi)
 	),
+	// ANCHOR: running-style-equal-popularity-one-noop
 	running_style_equal_popularity_one: noopImmediate,
+	// ANCHOR: running-style-temptation-opponent-count-mock
 	running_style_temptation_opponent_count_nige: noopSectionRandom(2,9),
 	running_style_temptation_opponent_count_senko: noopSectionRandom(2,9),
 	running_style_temptation_opponent_count_sashi: noopSectionRandom(2,9),

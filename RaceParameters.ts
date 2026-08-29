@@ -12,6 +12,7 @@ export interface RaceParameters {
 	readonly season: Season
 	readonly time: Time
 	readonly grade: Grade
+	// ANCHOR: race-parameters-popularity-field
 	readonly popularity: number
 	readonly orderRange?: [number, number]
 	readonly numUmas?: number

@@ -1,3 +1,4 @@
+// ANCHOR: course-data-node-assert-import
 import { strict as assert } from 'node:assert';
 
 export type Phase = 0 | 1 | 2 | 3;

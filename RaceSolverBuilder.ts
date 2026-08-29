@@ -250,6 +250,7 @@ function isTarget(self: Perspective, targetType: SkillTarget) {
 function buildSkillEffects(skill, perspective: Perspective) {
 	return skill.effects.map(ef => ({
 		type: SkillType.hasOwnProperty(ef.type) && isTarget(perspective, ef.target) ? ef.type : SkillType.Noop,
+		// ANCHOR: base-duration-scaling
 		baseDuration: skill.baseDuration / 10000,
 		modifier: ef.modifier / 10000
 	}));
@@ -282,6 +283,7 @@ export function buildSkillData(horse: HorseParameters, raceParams: PartialRacePa
 		if (regions.length == 0) {
 			continue;
 		}
+		// ANCHOR: second-trigger-detail-guard
 		if (triggers.length > 0 && !/is_activate_other_skill_detail|is_used_skill_id/.test(skill.condition)) {
 			// i don't like this at all. the problem is some skills with two triggers (for example all the is_activate_other_skill_detail ones)
 			// need to place two triggers so the second effect can activate, however, some other skills with two triggers only ever activate one
