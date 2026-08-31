@@ -359,9 +359,16 @@ def measurement_3(runs):
 	        'nMax': n2, 'pearsonRVsSkillLevelMax': float(r_max)}
 
 
+NON_FULL_SPURT_TOLERANCE_M = 10  # frame-log detection jitter around the phase-2 boundary --
+# realLastSpurtStartDistance is read off the replay's own sparse-cadence frame log (README's
+# "Frame cadence is not uniform" note), so a genuinely-on-schedule spurt still lands a little
+# past the exact phase-2 boundary. Shared with measurement_spurt_agreement below so "real
+# full spurt" means the same thing in both places.
+
+
 def measurement_4(runs, course_distance):
 	floor = course_distance * 2 / 3
-	cases = [r for r in runs if r['realLastSpurtStartDistance'] > floor + 10]
+	cases = [r for r in runs if r['realLastSpurtStartDistance'] > floor + NON_FULL_SPURT_TOLERANCE_M]
 	return {'floorM': floor, 'n': len(cases), 'cases': [
 		{
 			'file': r['file'], 'own': r['own'], 'charaName': r['charaName'],
@@ -427,10 +434,114 @@ def measurement_finish_order(runs):
 
 
 # ---------------------------------------------------------------------------------------
+# Additional measurements, added after the artifact review pass following PIPE-37's own
+# landing plan (see the ticket's Outcome for the review that produced these four). All read
+# fields corpusReport.ts already emits -- no new engine/corpus work required.
+# ---------------------------------------------------------------------------------------
+
+def reseed_spread(own_runs, reseed):
+	"""How often does the real result (error == 0) fall inside the sim's own 100-seed
+	spread for that exact race? Own runs only -- the reseed pass is own-runs-only by
+	construction (corpusReport.ts's --reseed flag only re-runs own-trainer races). This is
+	what makes the strip-plot panel's "sim noise vs. systematic offset" claim checkable
+	instead of asserted: a run where 0 falls outside the full 100-seed range means the
+	systematic offset for that one race is bigger than the sim's own luck swing, not
+	hidden inside it."""
+	if not reseed:
+		return None
+	own_by_key = {(r['file'], r['horseIndex']): r for r in own_runs}
+	per_run = []
+	full_coverage = 0
+	central_coverage = 0
+	n = 0
+	for entry in reseed['perRun']:
+		vals = np.array([v for v in entry['finishPosErrBasinn'] if v is not None], dtype=float)
+		if len(vals) == 0:
+			continue
+		n += 1
+		lo_full, hi_full = float(vals.min()), float(vals.max())
+		lo_c, hi_c = (float(v) for v in np.percentile(vals, [5, 95]))
+		if lo_full <= 0 <= hi_full:
+			full_coverage += 1
+		if lo_c <= 0 <= hi_c:
+			central_coverage += 1
+		own = own_by_key.get((entry['file'], entry['horseIndex']))
+		per_run.append({
+			'buildKey': entry['buildKey'], 'file': entry['file'],
+			'charaName': own['charaName'] if own else None,
+			'actualErrBasinn': own['finishPosErrBasinn'] if own else None,
+			'values': vals.tolist(),
+		})
+	per_run.sort(key=lambda r: (r['buildKey'], r['file']))
+	return {
+		'n': n, 'fullRangeCoverage': full_coverage, 'centralBandCoverage': central_coverage,
+		'perRun': per_run,
+	}
+
+
+def finish_time_scatter(own_runs):
+	"""Sim vs. real finish time, per own-trainer build (own runs only -- non-own runs
+	carry no reason to show a per-horse scatter and this is exactly the same population
+	headline A's rho_i is computed over, just laid out point-by-point instead of
+	collapsed to a correlation)."""
+	by_build = {}
+	for r in own_runs:
+		if r['simFinishTime'] is None or r['realFinishTime'] is None:
+			continue
+		by_build.setdefault(r['buildKey'], []).append({
+			'file': r['file'], 'charaName': r['charaName'],
+			'realFinishTime': r['realFinishTime'], 'simFinishTime': r['simFinishTime'],
+		})
+	return {b: sorted(v, key=lambda x: x['file']) for b, v in sorted(by_build.items())}
+
+
+def skill_activation_rate(runs):
+	"""What fraction of a build's equipped skills actually fired, over real races --
+	skillsInBuild/skillsActivated are already allowlisted for non-own runs (corpusReport.ts's
+	OTHER_RUN_KEYS), so this covers all buildable runs, not just own ones. A fact about real
+	races (activation conditions, not the sim), included because it's the context the
+	activation-pinning methodology note (see the module docstring) otherwise leaves implicit."""
+	rates = np.array([
+		r['skillsActivated'] / r['skillsInBuild'] for r in runs if r.get('skillsInBuild')
+	], dtype=float)
+	n = len(rates)
+	return {
+		'n': n,
+		'meanRate': float(rates.mean()) if n else float('nan'),
+		'minRate': float(rates.min()) if n else float('nan'),
+		'maxRate': float(rates.max()) if n else float('nan'),
+	}
+
+
+def measurement_spurt_agreement(runs, course_distance):
+	"""Does the sim's full/partial Last Spurt classification agree with the replay's own?
+	"Full spurt" for the real side is realLastSpurtStartDistance at or before the phase-2
+	boundary plus the same detection-jitter tolerance M4 uses (NON_FULL_SPURT_TOLERANCE_M)
+	-- i.e. "not one of M4's non-full-spurt case studies". Kept identical to M4's own
+	threshold so this binary classification and that case-study filter never disagree
+	about what "late" means."""
+	floor = course_distance * 2 / 3
+	sim_full = np.array([bool(r['simFullSpurt']) for r in runs])
+	real_full = np.array([r['realLastSpurtStartDistance'] <= floor + NON_FULL_SPURT_TOLERANCE_M for r in runs])
+	n = len(runs)
+	both_full = int(np.sum(sim_full & real_full))
+	sim_only_full = int(np.sum(sim_full & ~real_full))
+	real_only_full = int(np.sum(~sim_full & real_full))
+	neither_full = int(np.sum(~sim_full & ~real_full))
+	return {
+		'n': n, 'floorM': floor,
+		'simFullCount': int(sim_full.sum()), 'realFullCount': int(real_full.sum()),
+		'bothFull': both_full, 'simOnlyFull': sim_only_full,
+		'realOnlyFull': real_only_full, 'neitherFull': neither_full,
+		'agreementRate': (both_full + neither_full) / n if n else float('nan'),
+	}
+
+
+# ---------------------------------------------------------------------------------------
 # Report assembly.
 # ---------------------------------------------------------------------------------------
 
-def format_report(report, manifest, a, b, cov, m1, m2, m3, m4, m5, mfo):
+def format_report(report, manifest, a, b, cov, m1, m2, m3, m4, m5, mfo, reseed_cov, skr, spurt):
 	lines = []
 	w = lines.append
 	w('=' * 78)
@@ -524,6 +635,27 @@ def format_report(report, manifest, a, b, cov, m1, m2, m3, m4, m5, mfo):
 	w(f"  mean Kendall tau = {mfo['meanTau']:+.3f} (sd={mfo['sdTau']:.3f} across races)")
 	w(f"  mean Spearman rho = {mfo['meanRho']:+.3f} (sd={mfo['sdRho']:.3f} across races)")
 
+	if reseed_cov:
+		w('\n--- ADDITIONAL: reseed coverage (does reality fall inside the sim\'s own 100-seed spread?) ---')
+		w(f"  n={reseed_cov['n']} (race, own-build) pairs: reality inside the full 100-seed range in "
+		  f"{reseed_cov['fullRangeCoverage']}/{reseed_cov['n']}, inside the central 90% band in "
+		  f"{reseed_cov['centralBandCoverage']}/{reseed_cov['n']}")
+		w("  In most of these races, all 100 reseeded sims land on the same side of reality -- the")
+		w("  systematic offset (see Headline B) dominates the per-race picture rather than hiding")
+		w("  inside the sim's own run-to-run noise.")
+
+	w('\n--- ADDITIONAL: skill activation rate (real races, all buildable horses) ---')
+	w(f"  n={skr['n']}: mean {skr['meanRate'] * 100:.1f}% of a build's equipped skills fired, "
+	  f"range [{skr['minRate'] * 100:.1f}%, {skr['maxRate'] * 100:.1f}%]")
+	w("  A fact about the real races (activations are pinned from the replay's own event log")
+	w("  throughout this report), not a sim-accuracy measurement.")
+
+	w('\n--- ADDITIONAL: last-spurt full/partial agreement ---')
+	w(f"  n={spurt['n']} (floor={spurt['floorM']:.0f}m): sim full-spurt {spurt['simFullCount']}/{spurt['n']}, "
+	  f"real full-spurt {spurt['realFullCount']}/{spurt['n']}")
+	w(f"  agreement rate {spurt['agreementRate'] * 100:.1f}% (both full={spurt['bothFull']}, "
+	  f"sim-only={spurt['simOnlyFull']}, real-only={spurt['realOnlyFull']}, neither={spurt['neitherFull']})")
+
 	w('\n' + '=' * 78)
 	return '\n'.join(lines)
 
@@ -563,7 +695,7 @@ def representative_trajectories(own_runs):
 	return examples
 
 
-def build_artifact_json(report, runs, own_runs, a, b, cov, m1, m2, m3, m4, m5, mfo):
+def build_artifact_json(report, runs, own_runs, a, b, cov, m1, m2, m3, m4, m5, mfo, reseed_cov, fts, skr, spurt):
 	all_err = [r['finishPosErrBasinn'] for r in runs if r['finishPosErrBasinn'] is not None]
 	own_err = [r['finishPosErrBasinn'] for r in own_runs if r['finishPosErrBasinn'] is not None]
 	return {
@@ -591,6 +723,10 @@ def build_artifact_json(report, runs, own_runs, a, b, cov, m1, m2, m3, m4, m5, m
 			'typicalEffectLowBasinn': TYPICAL_EFFECT_LOW_BASINN,
 			'typicalEffectHighBasinn': TYPICAL_EFFECT_HIGH_BASINN,
 		},
+		'reseedSpread': reseed_cov,
+		'finishTimeScatter': fts,
+		'skillActivationRate': skr,
+		'spurtAgreement': spurt,
 	}
 
 
@@ -614,11 +750,15 @@ def main():
 	m4 = measurement_4(runs, report['courseDistance'])
 	m5 = measurement_5(runs)
 	mfo = measurement_finish_order(runs)
+	reseed_cov = reseed_spread(own_runs, reseed)
+	fts = finish_time_scatter(own_runs)
+	skr = skill_activation_rate(runs)
+	spurt = measurement_spurt_agreement(runs, report['courseDistance'])
 
-	print(format_report(report, report['manifest'], a, b, cov, m1, m2, m3, m4, m5, mfo))
+	print(format_report(report, report['manifest'], a, b, cov, m1, m2, m3, m4, m5, mfo, reseed_cov, skr, spurt))
 
 	if args.artifact_json:
-		artifact = build_artifact_json(report, runs, own_runs, a, b, cov, m1, m2, m3, m4, m5, mfo)
+		artifact = build_artifact_json(report, runs, own_runs, a, b, cov, m1, m2, m3, m4, m5, mfo, reseed_cov, fts, skr, spurt)
 		with open(args.artifact_json, 'w') as f:
 			json.dump(artifact, f, indent='\t')
 		eprint(f"wrote {args.artifact_json}")
