@@ -568,6 +568,7 @@ def build_artifact_json(report, runs, own_runs, a, b, cov, m1, m2, m3, m4, m5, m
 	own_err = [r['finishPosErrBasinn'] for r in own_runs if r['finishPosErrBasinn'] is not None]
 	return {
 		'courseSetId': report['courseSetId'], 'courseDistance': report['courseDistance'],
+		'manifest': report['manifest'],
 		'n': {'all': len(runs), 'own': len(own_runs)},
 		'headlineA': {k: v for k, v in a.items() if k != 'buildMeans'},
 		'headlineB': b,
