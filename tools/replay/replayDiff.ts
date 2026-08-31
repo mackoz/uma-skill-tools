@@ -177,7 +177,13 @@ export interface HorseDiffResult {
 	// (RaceSolver.ts:1341-1350) -- reading them requires the race to have actually reached
 	// that point, so these are read once after the horse stops stepping, not at build time.
 	simMaxHp: number;
-	simLastSpurtTransition: number; // -1 if the race never reached phase 2 (shouldn't happen for a full race)
+	// -1 has two possible causes, both legitimate: the race never reached phase 2 (shouldn't
+	// happen for a full race), or -- far more commonly, verified this session at 173/180
+	// corpus runs -- the horse achieved a full spurt from the phase-2 boundary itself
+	// (HpPolicy.ts's getLastSpurtPair returns [-1, maxSpeed] exactly when hp >= hpNeeded for
+	// the whole final stretch; simFullSpurt is true in that case). Check simFullSpurt to
+	// distinguish the two before treating -1 as "never reached phase 2".
+	simLastSpurtTransition: number;
 	simFullSpurt: boolean;
 	simNonFullSpurtDelayDistance: number | null;
 	// Replay-side echoes, so one object carries the whole per-run record without a second
