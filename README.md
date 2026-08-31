@@ -71,7 +71,7 @@ The value-scaling (1–25), duration-scaling (1–7), and skill-level (1–10) t
 
 ## Skill cooldowns
 
-Skills can only activate once per simulated race; skills with an in-game cooldown (弧線のプロフェッサー, ハヤテ一文字, etc.) aren't re-triggered.
+Under normal condition-triggered simulation, each skill's activation condition resolves to at most one trigger position, so a skill activates at most once per simulated race; skills with an in-game cooldown (弧線のプロフェッサー, ハヤテ一文字, etc.) aren't re-triggered. This guarantee is specific to condition-based triggering: `RaceSolverBuilder.addSkillAtPosition`'s direct position-pinning path (used by `tools/replay/replayDiff.ts`) bypasses it entirely — calling it twice for the same skill id double-fires the skill (PIPE-36).
 
 # Credit
 

@@ -28,9 +28,10 @@
 // -- a dt-vs-real-tick clock drift, a post-step sampling lag, an independently-drawn start
 // delay, post-finish sample contamination, and a rounded-up finish time. All five are
 // fixed as of this comment (interpolated sim sampling, pinned start delay, dual-finish
-// truncation, interpolated finish-line crossing) -- see that ticket for the measured
-// before/after. The regression baseline below reflects the *fixed* harness; don't compare
-// it against PIPE-21-era numbers without accounting for this.
+// truncation, interpolated finish-line crossing) -- see that ticket's Outcome section for
+// the measured before/after regression numbers. Any output from this harness now reflects
+// the *fixed* measurement apparatus; don't compare it against PIPE-21-era numbers without
+// accounting for this.
 
 import * as fs from 'fs';
 import * as path from 'path';
@@ -137,7 +138,7 @@ interface HorseDiffResult {
 	skillsInBuild: number;
 	skillsActivated: number;
 	skillsPinned: number;
-	skillsDuplicateActivations: number; // same (horse, skillId) recorded activating >1x -- the engine has no cooldowns, so only the first pin sticks (PIPE-36)
+	skillsDuplicateActivations: number; // same (horse, skillId) recorded activating >1x -- the engine has no cooldown gating between fixed-position pins, so a second pin would double-fire; dedup keeps only the first (PIPE-36)
 	skillsSkippedUnregisteredCondition: string[];
 	realFinishTime: number;
 	simFinishTime: number | null; // null if the safety valve tripped before this horse crossed the line
@@ -313,7 +314,7 @@ function summarize(results: HorseDiffResult[]) {
 	for (const r of results) {
 		console.log(`\nhorse ${r.horseIndex} (${r.name}): ${r.skillsPinned}/${r.skillsActivated} activations pinned (${r.skillsInBuild} equipped total)`);
 		if (r.skillsDuplicateActivations > 0) {
-			console.log(`  ${r.skillsDuplicateActivations} duplicate activation(s) collapsed (engine has no cooldowns -- only the first pin per skill sticks)`);
+			console.log(`  ${r.skillsDuplicateActivations} duplicate activation(s) collapsed (engine has no cooldown gating between pins -- a second pin would double-fire, so only the first is kept)`);
 		}
 		if (r.skillsSkippedUnregisteredCondition.length) {
 			console.log(`  skipped: ${r.skillsSkippedUnregisteredCondition.join('; ')}`);
