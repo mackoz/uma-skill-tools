@@ -138,6 +138,22 @@ function errorStats(r: HorseDiffResult) {
 	};
 }
 
+// Keys whose value is always drawn from the game's own small, fixed, public character
+// roster (raceHorse[].charaName) -- never from player-controlled free-text input -- so a
+// string-equality hit against a redacted trainerName/owner_trainer_name is definitionally
+// coincidence, not a leak of that trainer's real identity. `charaName` is that field
+// directly; `buildKey` is either the very same charaName value (own runs, which are
+// permitted full real identity by design -- see this file's Privacy section) or the
+// synthetic opaque `b<N>` cluster id (non-own runs, never derived from any player's real
+// input either). A 60-race corpus surfaced why this matters for real: a genuinely
+// different trainer had named their own account "Seiun Sky", which collided first with an
+// own run's buildKey and then (after excluding own runs didn't fully fix it) with a
+// non-own run's legitimately-shown charaName of the same game character. Widen this set
+// only for a field with the same structural property (drawn from a small closed roster or
+// a synthetic id, never free-text player input) -- never as a general-purpose way to
+// silence a future real hit.
+const NEVER_REDACTED_KEYS: ReadonlySet<string> = new Set(['charaName', 'buildKey']);
+
 // Structural publish gate. Walks every string value reachable from `value` and throws if
 // any equals a string in `redacted` -- equality, never substring, per the header comment
 // above. Call this on the *whole* report object before writing it anywhere.
@@ -154,6 +170,7 @@ function assertNoRedactedStrings(value: unknown, redacted: ReadonlySet<string>, 
 	}
 	if (value != null && typeof value === 'object') {
 		for (const [k, v] of Object.entries(value)) {
+			if (NEVER_REDACTED_KEYS.has(k)) continue;
 			assertNoRedactedStrings(v, redacted, `${pathStr}.${k}`);
 		}
 	}
