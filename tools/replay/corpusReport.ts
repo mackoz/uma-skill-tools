@@ -104,11 +104,19 @@ interface Manifest {
 	duplicateActivationsCollapsed: number;
 }
 
+interface ReseedRunEntry {
+	file: string;
+	horseIndex: number;
+	buildKey: string;
+	simFinishTimes: (number | null)[];
+	finishPosErrBasinn: (number | null)[];
+}
+
 interface CorpusReport {
 	courseSetId: number;
 	manifest: Manifest;
 	runs: RunRecord[];
-	reseed?: {seeds: number; perRun: {file: string; horseIndex: number; buildKey: string; simFinishTimes: (number | null)[]}[]};
+	reseed?: {seeds: number; perRun: ReseedRunEntry[]};
 }
 
 const rms = (xs: number[]) => xs.length ? Math.sqrt(xs.reduce((a, b) => a + b * b, 0) / xs.length) : null;
@@ -168,7 +176,7 @@ function buildCorpusReport(dir: string, reseedSeeds: number): CorpusReport {
 		duplicateActivationsCollapsed: 0,
 	};
 	const runs: RunRecord[] = [];
-	const reseedPerRun: {file: string; horseIndex: number; buildKey: string; simFinishTimes: (number | null)[]}[] = [];
+	const reseedPerRun: ReseedRunEntry[] = [];
 
 	// Non-own build identity: sequential opaque index, keyed privately on
 	// (trainerName, trained_chara_id) -- see header comment. This map and its keys are
@@ -255,20 +263,31 @@ function buildCorpusReport(dir: string, reseedSeeds: number): CorpusReport {
 		// Re-seed pass, own runs only -- Headline A's within-build sim-RNG floor only needs
 		// the 4x15 own-trainer repeats. Re-running the whole 9-horse race M times per file
 		// is cheap (~7ms/call measured) but pointless for horses the analysis never reads.
+		// Captures simDistAtRealFinish (not just simFinishTime) per seed, so sigma_simRNG can
+		// be measured directly in the same finishPosErrBasinn units as the headline itself,
+		// rather than approximated from a finish-time spread via a speed conversion.
 		if (reseedSeeds > 0) {
 			const ownHorseIndices = json.raceHorse
 				.map((rh: any, i: number) => rh.trainerName === playerTrainerName ? i : -1)
 				.filter((i: number) => i !== -1);
 			if (ownHorseIndices.length > 0) {
-				const perHorseFinishTimes = new Map<number, (number | null)[]>(ownHorseIndices.map((i: number) => [i, []]));
+				const perHorse = new Map<number, {simFinishTimes: (number | null)[]; finishPosErrBasinn: (number | null)[]}>(
+					ownHorseIndices.map((i: number) => [i, {simFinishTimes: [], finishPosErrBasinn: []}]));
 				for (let seed = 0; seed < reseedSeeds; seed++) {
 					const reseedResults = run(full, seed);
 					for (const i of ownHorseIndices) {
-						perHorseFinishTimes.get(i)!.push(reseedResults[i].simFinishTime);
+						const rr = reseedResults[i];
+						const acc = perHorse.get(i)!;
+						acc.simFinishTimes.push(rr.simFinishTime);
+						acc.finishPosErrBasinn.push(rr.simDistAtRealFinish != null ? (rr.simDistAtRealFinish - course.distance) / 2.5 : null);
 					}
 				}
 				for (const i of ownHorseIndices) {
-					reseedPerRun.push({file: f, horseIndex: i, buildKey: json.raceHorse[i].charaName, simFinishTimes: perHorseFinishTimes.get(i)!});
+					const acc = perHorse.get(i)!;
+					reseedPerRun.push({
+						file: f, horseIndex: i, buildKey: json.raceHorse[i].charaName,
+						simFinishTimes: acc.simFinishTimes, finishPosErrBasinn: acc.finishPosErrBasinn,
+					});
 				}
 			}
 		}
