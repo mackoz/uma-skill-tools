@@ -24,8 +24,11 @@
 //   do NOT apply them here, just divide.
 // - SKILL event param[0] is a 0-based horseIndex (not `frame_order`), param[1] is the
 //   skillId, param[2] is duration in 1e-4s (already distance-scaled, -1 for t=0 passives).
-// - horseResult.finishOrder here is 0-based; the JSON's own top-level `raceHorse[].finishOrder`
-//   is 1-based. Don't conflate the two.
+// - horseResult.finishOrder here is 0-based -- and so, actually, is the JSON's own
+//   top-level raceHorse[].finishOrder (verified across all 20 corpus files: observed
+//   range 0..8 for a 9-horse field). An earlier version of this comment claimed the
+//   top-level field was 1-based; that was wrong (PIPE-37). This file only ever reads the
+//   binary horseResult.finishOrder, so nothing downstream was affected -- just the doc.
 // - Frame cadence is NOT a uniform 1/15s: dense (0.0666s) for the first ~1.07s and last
 //   ~2.8s of the race, sparse (1.0656s, every 16th tick) for the middle ~97%. Don't assume
 //   evenly-spaced frames.
@@ -49,7 +52,7 @@ export interface Frame {
 }
 
 export interface HorseResult {
-	finishOrder: number; // 0-based (contrast with the JSON's own 1-based raceHorse[].finishOrder)
+	finishOrder: number; // 0-based -- same as the JSON's own top-level raceHorse[].finishOrder (see the file header)
 	finishTime: number;
 	finishDiffTime: number;
 	startDelayTime: number;

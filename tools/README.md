@@ -75,9 +75,10 @@ The output of speedguts.ts is intended to be piped into speedguts_colormesh.py f
 Decodes hakuraku-format saved-race JSON (the Global-client `simDataBase64` blob: per-frame
 distance/speed/HP/lane/blocking/temptation for every horse, per-horse finish results, and the
 full skill/event stream) into plain TypeScript objects, for checking this engine against real
-game output. Built for [PIPE-21](../../plans/work-queue/in-progress/pipe-21.md) in
-`uma-tools-plans` — see that ticket for the corpus this was verified against and what it's being
-used for. `npx ts-node tools/replay/parseReplay.ts <race.json>` prints a summary (header fields,
+game output. Built for PIPE-21 in `uma-tools-plans` — see that ticket for the corpus this was
+verified against and what it's being used for (a private-repo tracker; no link here — see
+`CLAUDE.md`'s never-link-the-private-repo-from-a-public-repo rule). `npx ts-node
+tools/replay/parseReplay.ts <race.json>` prints a summary (header fields,
 horse results, per-horse skill activation timeline); `npx ts-node tools/replay/parseReplay.ts
 --all <dir>` sweeps a directory and reports parse success/failure per file. `deserialize()`,
 `parseReplayFile()`, and `skillTimeline()` are also exported for use from other scripts. Only
@@ -100,7 +101,35 @@ under plain `ts-node` — the `RaceSolverBuilder.ts` per-file typecheck failures
 hit (HP-5's dead `EnhancedHpPolicy` import, PIPE-22's missing `HorseDesc.skills` field) are
 both fixed. Also built for PIPE-21; documents its own modeling simplifications (dropped
 never-activated skills, no cross-horse debuff targeting, static order assumption) in its
-file header — read those before trusting a diff number at face value.
+file header — read those before trusting a diff number at face value. PIPE-37 widened its
+reported surface for `corpusReport.ts` below (exported `HorseDiffResult`/`DiffSample`, an
+optional seed override on `run()`, `simDistAtRealFinish` and the spurt/HP/covariate fields)
+without changing anything `summarize()` prints — that text is still PIPE-36's frozen
+regression baseline.
+
+# replay/corpusReport.ts
+
+Corpus-wide JSON emitter, no statistics — walks a directory of replays (the mixed-course
+guard from `measureDownhill.ts` below, the per-file try/catch isolation from
+`parseReplay.ts --all` above; neither existing tool combined both), runs `replayDiff.ts`'s
+`run()` over each file, and emits one JSON document privacy-redacted at construction time
+(see the file's own header comment for the redaction rule — it's an allowlist built
+field-by-field, not a denylist stripped off a richer object, and the publish gate is
+structural string equality, never a substring/`grep` check). `npx ts-node
+tools/replay/corpusReport.ts <corpus-dir> [--reseed N]` (`--reseed`, default 100, re-runs
+each own-trainer horse under N seeds to measure the sim's own run-to-run spread — set to 0
+to skip that pass). Built for PIPE-37; its own comments document exactly what's redacted
+for non-own runs and why.
+
+# replay/analyze_replay_diff.py
+
+Turns `corpusReport.ts`'s JSON (piped on stdin) into the corpus-wide accuracy report —
+statistics only, no simulation. PEP-723 (`numpy`/`scipy`/`matplotlib`, `[tool.uv]
+exclude-newer` pinned for report reproducibility), run via `uv run tools/replay/
+analyze_replay_diff.py --artifact-json <path> < corpus.json`. Built for PIPE-37; its own
+header comment and the ticket's `## Plan`/`## Outcome` in `uma-tools-plans` document the
+full methodology (why the headline is two numbers, not one; why attribution is regression,
+not subsetting; where the pass/fail calibration citation came from).
 
 # replay/measureDownhill.ts
 
