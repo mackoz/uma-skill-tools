@@ -498,6 +498,32 @@ def histogram_bins(values, n_bins=20):
 	return {'edges': edges.tolist(), 'counts': counts.tolist()}
 
 
+def representative_trajectories(own_runs):
+	"""One example run per own build for the artifact's trajectory-overlay panel -- the
+	one closest to its build's own median finishPosErrBasinn, so it's a typical example,
+	not a cherry-picked best or worst case. Own runs only, per the privacy rule (only own
+	runs carry samples[] at all)."""
+	by_build = {}
+	for r in own_runs:
+		if r.get('finishPosErrBasinn') is not None and r.get('samples'):
+			by_build.setdefault(r['buildKey'], []).append(r)
+	examples = []
+	for build, rows in sorted(by_build.items()):
+		errs = sorted(rows, key=lambda r: r['finishPosErrBasinn'])
+		median_row = errs[len(errs) // 2]
+		examples.append({
+			'buildKey': build, 'file': median_row['file'],
+			'realFinishTime': median_row['realFinishTime'],
+			'simFinishTime': median_row['simFinishTime'],
+			'finishPosErrBasinn': median_row['finishPosErrBasinn'],
+			'samples': [
+				{'time': s['time'], 'simDist': s['simDist'], 'realDist': s['realDist']}
+				for s in median_row['samples']
+			],
+		})
+	return examples
+
+
 def build_artifact_json(report, runs, own_runs, a, b, cov, m1, m2, m3, m4, m5):
 	all_err = [r['finishPosErrBasinn'] for r in runs if r['finishPosErrBasinn'] is not None]
 	own_err = [r['finishPosErrBasinn'] for r in own_runs if r['finishPosErrBasinn'] is not None]
@@ -518,6 +544,7 @@ def build_artifact_json(report, runs, own_runs, a, b, cov, m1, m2, m3, m4, m5):
 			'finishPosErrBasinnAll': histogram_bins(all_err),
 			'finishPosErrBasinnOwn': histogram_bins(own_err),
 		},
+		'trajectoryExamples': representative_trajectories(own_runs),
 		'calibration': {
 			'citation': CALIBRATION_CITATION,
 			'typicalEffectLowBasinn': TYPICAL_EFFECT_LOW_BASINN,
