@@ -392,11 +392,45 @@ def measurement_5(runs):
 	}
 
 
+def measurement_finish_order(runs):
+	"""Per-race agreement between the sim's finish-time-derived ranking and the replay's
+	own recorded finish order -- kendalltau/spearmanr per race (>=3 horses with a non-null
+	simFinishTime), corpus-wide mean across races. Not restricted to own runs: every
+	buildable horse in a race, own or other, has both realFinishOrder and simFinishTime."""
+	by_race = {}
+	for r in runs:
+		by_race.setdefault(r['file'], []).append(r)
+
+	taus, rhos, field_sizes = [], [], []
+	for horses in by_race.values():
+		valid = [h for h in horses if h['simFinishTime'] is not None]
+		if len(valid) < 3:
+			continue
+		real_rank = stats.rankdata([h['realFinishOrder'] for h in valid])
+		sim_rank = stats.rankdata([h['simFinishTime'] for h in valid])
+		tau, _ = stats.kendalltau(real_rank, sim_rank)
+		rho, _ = stats.spearmanr(real_rank, sim_rank)
+		if np.isfinite(tau):
+			taus.append(tau)
+		if np.isfinite(rho):
+			rhos.append(rho)
+		field_sizes.append(len(valid))
+
+	return {
+		'nRaces': len(taus),
+		'meanTau': float(np.mean(taus)) if taus else float('nan'),
+		'sdTau': float(np.std(taus, ddof=1)) if len(taus) > 1 else float('nan'),
+		'meanRho': float(np.mean(rhos)) if rhos else float('nan'),
+		'sdRho': float(np.std(rhos, ddof=1)) if len(rhos) > 1 else float('nan'),
+		'meanFieldSize': float(np.mean(field_sizes)) if field_sizes else float('nan'),
+	}
+
+
 # ---------------------------------------------------------------------------------------
 # Report assembly.
 # ---------------------------------------------------------------------------------------
 
-def format_report(report, manifest, a, b, cov, m1, m2, m3, m4, m5):
+def format_report(report, manifest, a, b, cov, m1, m2, m3, m4, m5, mfo):
 	lines = []
 	w = lines.append
 	w('=' * 78)
@@ -485,6 +519,11 @@ def format_report(report, manifest, a, b, cov, m1, m2, m3, m4, m5):
 	  f"(SE={m5['observedSE']:.3f})")
 	w(f"  {m5['analyticNote']}")
 
+	w('\n--- Finish-order agreement (sim-derived rank vs replay-recorded finish order) ---')
+	w(f"  n={mfo['nRaces']} races, mean field size={mfo['meanFieldSize']:.1f} buildable horses")
+	w(f"  mean Kendall tau = {mfo['meanTau']:+.3f} (sd={mfo['sdTau']:.3f} across races)")
+	w(f"  mean Spearman rho = {mfo['meanRho']:+.3f} (sd={mfo['sdRho']:.3f} across races)")
+
 	w('\n' + '=' * 78)
 	return '\n'.join(lines)
 
@@ -524,7 +563,7 @@ def representative_trajectories(own_runs):
 	return examples
 
 
-def build_artifact_json(report, runs, own_runs, a, b, cov, m1, m2, m3, m4, m5):
+def build_artifact_json(report, runs, own_runs, a, b, cov, m1, m2, m3, m4, m5, mfo):
 	all_err = [r['finishPosErrBasinn'] for r in runs if r['finishPosErrBasinn'] is not None]
 	own_err = [r['finishPosErrBasinn'] for r in own_runs if r['finishPosErrBasinn'] is not None]
 	return {
@@ -540,6 +579,7 @@ def build_artifact_json(report, runs, own_runs, a, b, cov, m1, m2, m3, m4, m5):
 			],
 		},
 		'measurement1': m1, 'measurement2': m2, 'measurement3': m3, 'measurement4': m4, 'measurement5': m5,
+		'finishOrderAgreement': mfo,
 		'histograms': {
 			'finishPosErrBasinnAll': histogram_bins(all_err),
 			'finishPosErrBasinnOwn': histogram_bins(own_err),
@@ -572,11 +612,12 @@ def main():
 	m3 = measurement_3(runs)
 	m4 = measurement_4(runs, report['courseDistance'])
 	m5 = measurement_5(runs)
+	mfo = measurement_finish_order(runs)
 
-	print(format_report(report, report['manifest'], a, b, cov, m1, m2, m3, m4, m5))
+	print(format_report(report, report['manifest'], a, b, cov, m1, m2, m3, m4, m5, mfo))
 
 	if args.artifact_json:
-		artifact = build_artifact_json(report, runs, own_runs, a, b, cov, m1, m2, m3, m4, m5)
+		artifact = build_artifact_json(report, runs, own_runs, a, b, cov, m1, m2, m3, m4, m5, mfo)
 		with open(args.artifact_json, 'w') as f:
 			json.dump(artifact, f, indent='\t')
 		eprint(f"wrote {args.artifact_json}")
