@@ -114,6 +114,7 @@ interface ReseedRunEntry {
 
 interface CorpusReport {
 	courseSetId: number;
+	courseDistance: number; // meters -- so the analysis script doesn't have to hardcode/assume it
 	manifest: Manifest;
 	runs: RunRecord[];
 	reseed?: {seeds: number; perRun: ReseedRunEntry[]};
@@ -171,6 +172,7 @@ function buildCorpusReport(dir: string, reseedSeeds: number): CorpusReport {
 	const files = fs.readdirSync(dir).filter(f => f.endsWith('.json')).sort();
 
 	let courseSetId: number | null = null;
+	let courseDistance: number | null = null;
 	const manifest: Manifest = {
 		filesScanned: 0, filesFailed: [], runsAttempted: 0, runsBuildFailed: [],
 		duplicateActivationsCollapsed: 0,
@@ -213,6 +215,7 @@ function buildCorpusReport(dir: string, reseedSeeds: number): CorpusReport {
 		}
 
 		const course = CourseHelpers.getCourse(courseSetId!);
+		if (courseDistance == null) courseDistance = course.distance;
 		const playerTrainerName = json.raceHorse[json.playerHorseIndex].trainerName;
 
 		for (const r of results) {
@@ -295,6 +298,7 @@ function buildCorpusReport(dir: string, reseedSeeds: number): CorpusReport {
 
 	const report: CorpusReport = {
 		courseSetId: courseSetId ?? -1,
+		courseDistance: courseDistance ?? -1,
 		manifest, runs,
 		...(reseedSeeds > 0 ? {reseed: {seeds: reseedSeeds, perRun: reseedPerRun}} : {}),
 	};
