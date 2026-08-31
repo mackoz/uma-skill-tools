@@ -26,7 +26,7 @@ Guidance for working in this repo. It's the race-simulation engine — no UI, no
 
 ## Known gaps (see `README.md`'s Caveats for the full list)
 
-- No skill cooldowns — a skill can only activate once per simulated race.
+- No skill cooldowns — under normal condition-triggered simulation, a skill can only activate once per simulated race (the direct position-pinning path used by `tools/replay/replayDiff.ts` bypasses this and can double-fire — see `README.md`'s "Skill cooldowns" section).
 - No value/duration/level scaling tables.
 - `accumulatetime` combined with a distribution-modeled condition may still activate earlier than the distribution predicts (no per-skill exemption list, unlike alpha123's engine).
 - A handful of shipped skill conditions (`temptation_opponent_count_behind`/`_infront`, `is_other_character_activate_advantage_skill`, plus 15 JP-only names) aren't registered in `ActivationConditions.ts`'s `Conditions` table — 18 unregistered names total. Referencing one now throws a named `ConditionParser` `ParseError: unknown condition: <name>` at skill-build time instead of a bare `TypeError` — see `README.md`'s "Unknown skill conditions now fail loudly, by name" section.

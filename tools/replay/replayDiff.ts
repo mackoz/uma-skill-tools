@@ -23,12 +23,22 @@
 // - mood is derived from `motivation - 3` on the game's 1..5 scale, not cross-checked
 //   against `motivationCoef` -- an approximation, not verified against the engine's own
 //   mood modifier table.
+//
+// PIPE-36: the harness itself (not the engine) previously carried ~2.3m of removable bias
+// -- a dt-vs-real-tick clock drift, a post-step sampling lag, an independently-drawn start
+// delay, post-finish sample contamination, and a rounded-up finish time. All five are
+// fixed as of this comment (interpolated sim sampling, pinned start delay, dual-finish
+// truncation, interpolated finish-line crossing) -- see that ticket's Outcome section for
+// the measured before/after regression numbers. Any output from this harness now reflects
+// the *fixed* measurement apparatus; don't compare it against PIPE-21-era numbers without
+// accounting for this.
 
 import * as fs from 'fs';
 import * as path from 'path';
 
 import { RaceSolverBuilder, HorseDesc } from '../../RaceSolverBuilder';
 import { RaceSolver } from '../../RaceSolver';
+import { GameHpPolicy } from '../../HpPolicy';
 import { Strategy, Aptitude } from '../../HorseTypes';
 import { CourseHelpers } from '../../CourseData';
 import skillData from '../../data/skill_data.json';
@@ -82,6 +92,19 @@ function replayStateAtTime(frames: Frame[], horseIndex: number, time: number): {
 	return {distance: last.distance, speed: last.speed, hp: last.hp};
 }
 
+// HpPolicy (RaceSolverBuilder.ts's declared type for RaceSolver.hp) lists methods only --
+// `hp`/`maxHp` are fields on the GameHpPolicy *class*, and NoopHpPolicy (attached whenever
+// .mode('compare') isn't set) satisfies the interface with neither field. This harness
+// always sets .mode('compare'), so GameHpPolicy is guaranteed here, but read through one
+// guarded accessor rather than bare `as any` casts scattered per call site (PIPE-36).
+function hpOf(s: RaceSolver): number {
+	return s.hp instanceof GameHpPolicy ? s.hp.hp : NaN;
+}
+
+function currentSpeedOf(s: RaceSolver): number {
+	return s.currentSpeed + s.modifiers.currentSpeed.acc + s.modifiers.currentSpeed.err;
+}
+
 function buildHorseDesc(raceHorse: any, courseSurface: number, courseDistanceType: number): HorseDesc {
 	const rd = raceHorse.responseHorseData;
 	const surfaceInt = courseSurface === 1 ? rd.proper_ground_turf : rd.proper_ground_dirt;
@@ -115,7 +138,10 @@ interface HorseDiffResult {
 	skillsInBuild: number;
 	skillsActivated: number;
 	skillsPinned: number;
+	skillsDuplicateActivations: number; // same (horse, skillId) recorded activating >1x -- the engine has no cooldown gating between fixed-position pins, so a second pin would double-fire; dedup keeps only the first (PIPE-36)
 	skillsSkippedUnregisteredCondition: string[];
+	realFinishTime: number;
+	simFinishTime: number | null; // null if the safety valve tripped before this horse crossed the line
 	samples: {time: number; simDist: number; realDist: number; simSpeed: number; realSpeed: number; simHp: number; realHp: number}[];
 }
 
@@ -147,6 +173,16 @@ function run(replayPath: string) {
 
 		const activations = timeline.get(h) || [];
 		const equipped = new Set<number>((raceHorse.responseHorseData.skill_array || []).map((s: any) => s.skill_id));
+		// The replay can record the same skill activating twice for one horse (observed in
+		// a small number of corpus runs). addSkillAtPosition pushes an independent pending
+		// activation per call, and the engine has no cross-entry cooldown gating fixed-
+		// position pins against each other -- calling it twice for the same skill id
+		// double-fires that skill's effects (verified empirically: two calls -> two
+		// onSkillActivate callbacks at the pinned position). Dedupe before pinning and
+		// count what was dropped instead of silently double-applying an effect the replay
+		// only recorded once (PIPE-36).
+		const pinnedSkillIds = new Set<number>();
+		let duplicateActivations = 0;
 		// addSkillAtPosition (RaceSolverBuilder.ts:745-748) only pushes onto an internal list --
 		// condition parsing happens later, all at once, inside build()'s flatMap. It structurally
 		// cannot throw here, so there is no per-skill isolation to catch: one bad condition among
@@ -154,6 +190,8 @@ function run(replayPath: string) {
 		// around g.next(). Don't wrap this call in a try/catch that implies otherwise.
 		for (const a of activations) {
 			if (!(String(a.skillId) in (skillData as any))) continue; // shouldn't happen per PIPE-21's research, but don't crash the run
+			if (pinnedSkillIds.has(a.skillId)) { duplicateActivations++; continue; }
+			pinnedSkillIds.add(a.skillId);
 			const pos = distanceAtTime(parsed.frame, h, a.time);
 			b.addSkillAtPosition(String(a.skillId), pos);
 		}
@@ -161,8 +199,11 @@ function run(replayPath: string) {
 		builders.push(b);
 		diffResults.push({
 			horseIndex: h, name: raceHorse.charaName,
-			skillsInBuild: equipped.size, skillsActivated: activations.length, skillsPinned: activations.length,
-			skillsSkippedUnregisteredCondition: [], samples: [],
+			skillsInBuild: equipped.size, skillsActivated: activations.length, skillsPinned: pinnedSkillIds.size,
+			skillsDuplicateActivations: duplicateActivations,
+			skillsSkippedUnregisteredCondition: [],
+			realFinishTime: parsed.horseResult[h].finishTimeRaw, simFinishTime: null,
+			samples: [],
 		});
 	}
 
@@ -173,7 +214,16 @@ function run(replayPath: string) {
 	const solvers: (RaceSolver | null)[] = builders.map((b, h) => {
 		try {
 			const g = b.build();
-			return g.next().value as RaceSolver;
+			const s = g.next().value as RaceSolver;
+			// The solver draws its own startDelay (RaceSolver.ts:534, 0.1 * rng.random())
+			// rather than reproducing the replay's actual draw -- an uncorrelated offset
+			// that persists for the whole race (measured sd ~0.043s / ~0.93m across the
+			// corpus). Overwrite with the replay's recorded value post-construction: safe
+			// here since it already reflects any MultiplyStartDelay/SetStartDelay skill
+			// effect applied during processSkillActivations() (PIPE-36).
+			s.startDelay = parsed.horseResult[h].startDelayTime;
+			s.startDelayAccumulator = s.startDelay;
+			return s;
 		} catch (e) {
 			diffResults[h].skillsSkippedUnregisteredCondition.push(`build() failed: ${(e as Error).message}`);
 			return null;
@@ -187,26 +237,69 @@ function run(replayPath: string) {
 
 	const dt = 1 / 15;
 	const finished = solvers.map(s => s == null);
+	// State at the START of the current step, per horse -- used to interpolate both the
+	// sim's state at each replay sample time and the exact finish-line crossing time,
+	// rather than reading a fixed post-step value. This is what actually removes the two
+	// largest measured harness biases (PIPE-36): comparing `s.pos` read right after
+	// `simTime += dt` against a replay time sampled mid-step was a systematic +0.72m lag,
+	// and the sim's dt (1/15 = 0.0666667) silently drifting against the replay's own exact
+	// 0.0666s tick was worth +1.6m of extra integrated distance by the finish. Interpolating
+	// to the replay's own exact times fixes both without needing dt to match the tick.
+	const before: {time: number; pos: number; speed: number; hp: number}[] = solvers.map(s => ({
+		time: 0, pos: 0, speed: s ? currentSpeedOf(s) : 0, hp: s ? hpOf(s) : NaN,
+	}));
+
 	// sample the sim at the replay's own timestamps rather than assuming aligned ticks --
 	// the replay is downsampled (sparse ~1.07s cadence for 97% of the race, see PIPE-21).
 	let nextSampleIdx = 0;
 	let simTime = 0;
 	while (!finished.every(f => f)) {
+		const stepStart = simTime;
 		solvers.forEach((s, h) => {
 			if (s == null || finished[h]) return;
-			if (s.pos >= course.distance) { finished[h] = true; return; }
+			before[h] = {time: stepStart, pos: s.pos, speed: currentSpeedOf(s), hp: hpOf(s)};
 			s.step(dt);
 		});
 		simTime += dt;
+
+		// Record the exact finish-line crossing time by interpolating within this step,
+		// instead of reporting the first post-crossing tick -- the latter is a one-directional
+		// +0.033s (~0.7m) bias against the replay's own (effectively exact) finishTimeRaw,
+		// measured as >1% of the corpus's entire 2.99s finish-time spread (PIPE-36).
+		solvers.forEach((s, h) => {
+			if (s == null || finished[h]) return;
+			if (s.pos >= course.distance) {
+				const b = before[h];
+				const ratio = s.pos > b.pos ? (course.distance - b.pos) / (s.pos - b.pos) : 0;
+				diffResults[h].simFinishTime = b.time + ratio * dt;
+				finished[h] = true;
+			}
+		});
+
 		while (nextSampleIdx < parsed.frame.length && parsed.frame[nextSampleIdx].time <= simTime) {
 			const t = parsed.frame[nextSampleIdx].time;
 			solvers.forEach((s, h) => {
-				if (s == null || finished[h]) return; // don't compare a frozen finished sim.pos against real post-finish run-out distance
+				if (s == null) return;
+				// Stop comparing a horse once EITHER side of the comparison has finished --
+				// not just the sim's own finish. The old guard truncated only on the sim's
+				// finish, so real post-finish run-out distance (real horses keep moving for
+				// up to ~70m after crossing 1600m) got compared against a frozen sim.pos;
+				// measured at 11.7% of all 21537 corpus samples, concentrated in the dense,
+				// high-weight end-of-race sampling window (PIPE-36).
+				const realFinish = diffResults[h].realFinishTime;
+				const simFinish = diffResults[h].simFinishTime;
+				if (t > realFinish) return;
+				if (simFinish != null && t > simFinish) return;
+				const b = before[h];
+				const ratio = simTime > b.time ? (t - b.time) / (simTime - b.time) : 0;
+				const simDist = b.pos + (s.pos - b.pos) * ratio;
+				const simSpeed = b.speed + (currentSpeedOf(s) - b.speed) * ratio;
+				const simHp = b.hp + (hpOf(s) - b.hp) * ratio;
 				const real = replayStateAtTime(parsed.frame, h, t);
 				diffResults[h].samples.push({
-					time: t, simDist: s.pos, realDist: real.distance,
-					simSpeed: s.currentSpeed + s.modifiers.currentSpeed.acc + s.modifiers.currentSpeed.err, realSpeed: real.speed,
-					simHp: (s.hp as any).hp ?? NaN, realHp: real.hp,
+					time: t, simDist, realDist: real.distance,
+					simSpeed, realSpeed: real.speed,
+					simHp, realHp: real.hp,
 				});
 			});
 			nextSampleIdx++;
@@ -220,6 +313,9 @@ function run(replayPath: string) {
 function summarize(results: HorseDiffResult[]) {
 	for (const r of results) {
 		console.log(`\nhorse ${r.horseIndex} (${r.name}): ${r.skillsPinned}/${r.skillsActivated} activations pinned (${r.skillsInBuild} equipped total)`);
+		if (r.skillsDuplicateActivations > 0) {
+			console.log(`  ${r.skillsDuplicateActivations} duplicate activation(s) collapsed (engine has no cooldown gating between pins -- a second pin would double-fire, so only the first is kept)`);
+		}
 		if (r.skillsSkippedUnregisteredCondition.length) {
 			console.log(`  skipped: ${r.skillsSkippedUnregisteredCondition.join('; ')}`);
 		}
@@ -232,6 +328,12 @@ function summarize(results: HorseDiffResult[]) {
 		console.log(`  distance error: mean=${mean(distErrs).toFixed(2)}m rms=${rms(distErrs).toFixed(2)}m (n=${r.samples.length})`);
 		console.log(`  speed error:    mean=${mean(speedErrs).toFixed(3)}m/s rms=${rms(speedErrs).toFixed(3)}m/s`);
 		console.log(`  hp error:       mean=${mean(hpErrs).toFixed(1)} rms=${rms(hpErrs).toFixed(1)} (real hp0=${r.samples[0].realHp})`);
+		if (r.simFinishTime != null) {
+			const finishErr = r.simFinishTime - r.realFinishTime;
+			console.log(`  finish time:    sim=${r.simFinishTime.toFixed(4)}s real=${r.realFinishTime.toFixed(4)}s err=${finishErr >= 0 ? '+' : ''}${finishErr.toFixed(4)}s`);
+		} else {
+			console.log(`  finish time:    sim never reached the finish line (safety valve tripped)`);
+		}
 		const last = r.samples[r.samples.length - 1];
 		console.log(`  final sample (t=${last.time.toFixed(2)}): sim dist=${last.simDist.toFixed(1)} real dist=${last.realDist.toFixed(1)}`);
 	}
