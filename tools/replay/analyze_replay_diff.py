@@ -80,11 +80,13 @@ def masked(*arrays):
 
 def race_clustered_bootstrap(race_ids, statistic_fn, n_boot=N_BOOT, seed=BOOT_SEED):
 	"""Cluster bootstrap on race only (not race+build two-way, per this ticket's own
-	deviation note -- with only 4 own builds, an independent build-level resample is
-	nearly degenerate; race has 20 clusters and is where the real non-independence
-	(same field, same course-day conditions, 3 own horses sharing a race) actually
-	lives). statistic_fn(indices) -> float, computed over a resampled index array built
-	by drawing race clusters with replacement. Returns (lo95, hi95, se, all_boot_values).
+	deviation note -- with the own-build count typically small, an independent
+	build-level resample is nearly degenerate however many races each build has raced;
+	race is where the real non-independence (same field, same course-day conditions,
+	multiple own horses sharing a race) actually lives, and its cluster count scales with
+	the corpus, not with build count). statistic_fn(indices) -> float, computed over a
+	resampled index array built by drawing race clusters with replacement. Returns
+	(lo95, hi95, se, all_boot_values).
 	"""
 	race_ids = np.asarray(race_ids)
 	races = np.unique(race_ids)
@@ -224,19 +226,29 @@ def headline_b(own_runs):
 	# [-1.2, +2.4] does reach past the typical-effect ceiling, but it also can't rule out
 	# zero, so "FAIL-leaning" was the wrong verdict for it.
 	if not np.isfinite(lo) or not np.isfinite(hi):
+		verdict_key = 'UNDERPOWERED'
 		verdict = 'UNDERPOWERED (bootstrap CI did not resolve)'
 	else:
 		far_bound = max(abs(lo), abs(hi))
 		near_bound = min(abs(lo), abs(hi))
 		excludes_zero = (lo > 0) or (hi < 0)
 		if far_bound < TYPICAL_EFFECT_LOW_BASINN:
+			verdict_key = 'PASS'
 			verdict = 'PASS -- entire CI stays below even the smallest typical per-skill effect'
 		elif excludes_zero and near_bound > TYPICAL_EFFECT_HIGH_BASINN:
+			verdict_key = 'FAIL'
 			verdict = 'FAIL -- CI excludes zero and stays entirely above the typical per-skill effect range'
 		else:
+			verdict_key = 'UNDERPOWERED'
 			verdict = 'UNDERPOWERED -- CI does not resolve whether the bias is negligible or comparable to a typical effect'
 
-	return {'n': n, 'meanBasinn': point, 'ci95': (lo, hi), 'bootSE': se, 'verdict': verdict}
+	# verdictKey is the machine-readable sibling of the prose `verdict` string above --
+	# added because the artifact's JS was parsing a key out of `verdict` with
+	# `.split(' -- ')`, which breaks on the UNDERPOWERED-bootstrap-didn't-resolve branch
+	# (no ' -- ' in that string). `verdict` itself is unchanged, still the full sentence
+	# used in report.txt and the citation text.
+	return {'n': n, 'meanBasinn': point, 'ci95': (lo, hi), 'bootSE': se,
+	        'verdict': verdict, 'verdictKey': verdict_key}
 
 
 # ---------------------------------------------------------------------------------------
@@ -556,10 +568,14 @@ def format_report(report, manifest, a, b, cov, m1, m2, m3, m4, m5, mfo, reseed_c
 	w('=' * 78)
 
 	w('\n--- HEADLINE A: single-race prediction error, against its own measured floor ---')
-	w(f"  n={a['n']} (own-trainer runs, 4 builds x up to 15 races)")
+	n_builds = len(a['rhoByBuild'])
+	race_counts = [n_rho for _, n_rho in a['rhoByBuild'].values()]
+	max_races = max(race_counts) if race_counts else 0
+	w(f"  n={a['n']} (own-trainer runs, {n_builds} builds x up to {max_races} races)")
 	w(f"  SD(epsilon) = {a['sdEpsilonBasinn']:.3f} basinn  "
 	  f"(95% CI [{a['ci95'][0]:.3f}, {a['ci95'][1]:.3f}], race-clustered bootstrap, n_boot={N_BOOT})")
-	w(f"  build-constant spread SD(b) = {a['buildConstantSdBasinn']:.3f} basinn (4 groups, 3 df -- "
+	n_groups = len(a['buildMeans'])
+	w(f"  build-constant spread SD(b) = {a['buildConstantSdBasinn']:.3f} basinn ({n_groups} groups, {n_groups - 1} df -- "
 	  f"essentially uninformative on its own, reported for completeness only)")
 	w('  sigma_simRNG (the sim\'s own run-to-run spread, activations pinned, seed varied):')
 	for build, v in sorted(a['sigmaSimRngByBuild'].items()):
@@ -575,7 +591,7 @@ def format_report(report, manifest, a, b, cov, m1, m2, m3, m4, m5, mfo, reseed_c
 	w('  candidate model error, not asserted model error.')
 
 	w('\n--- HEADLINE B: systematic differential error (the defensible bound) ---')
-	w(f"  n={b['n']} (within-race own-horse pairwise position-gap contrasts, 3 pairs x <=20 races)")
+	w(f"  n={b['n']} (within-race own-horse pairwise position-gap contrasts)")
 	w(f"  mean contrast error = {b['meanBasinn']:.3f} basinn  "
 	  f"(95% CI [{b['ci95'][0]:.3f}, {b['ci95'][1]:.3f}], race-clustered bootstrap SE={b['bootSE']:.3f})")
 	w(f"  calibration: {CALIBRATION_CITATION}")
@@ -695,6 +711,25 @@ def representative_trajectories(own_runs):
 	return examples
 
 
+def sanitize_for_json(value):
+	"""Recursively replace any non-finite float (nan/inf/-inf) with None. Several stats in
+	this file are legitimately non-finite on a degenerate corpus (a build with <2 races
+	gives a nan SD, a build with <3 races gives a nan bootstrap CI/correlation -- see
+	race_clustered_bootstrap's own empty-boots return, or headline_a's per-build stats) --
+	Python's json.dump defaults to allow_nan=True, which emits bare NaN/Infinity tokens
+	that are not valid JSON and that the artifact build's own JSON.parse rejects outright.
+	Called once on the whole artifact dict right before dumping, rather than chasing every
+	individual site that can produce a non-finite value -- new stats added later inherit
+	the same protection for free."""
+	if isinstance(value, float):
+		return value if np.isfinite(value) else None
+	if isinstance(value, dict):
+		return {k: sanitize_for_json(v) for k, v in value.items()}
+	if isinstance(value, (list, tuple)):
+		return [sanitize_for_json(v) for v in value]
+	return value
+
+
 def build_artifact_json(report, runs, own_runs, a, b, cov, m1, m2, m3, m4, m5, mfo, reseed_cov, fts, skr, spurt):
 	all_err = [r['finishPosErrBasinn'] for r in runs if r['finishPosErrBasinn'] is not None]
 	own_err = [r['finishPosErrBasinn'] for r in own_runs if r['finishPosErrBasinn'] is not None]
@@ -738,6 +773,10 @@ def main():
 
 	report = json.load(sys.stdin)
 	runs = report['runs']
+	if not runs:
+		eprint("no runs to analyze -- report['runs'] is empty (every file failed to parse or "
+		       "build? check the manifest's filesFailed/runsBuildFailed)")
+		sys.exit(1)
 	own_runs = [r for r in runs if r['own']]
 	reseed = report.get('reseed')
 
@@ -759,8 +798,12 @@ def main():
 
 	if args.artifact_json:
 		artifact = build_artifact_json(report, runs, own_runs, a, b, cov, m1, m2, m3, m4, m5, mfo, reseed_cov, fts, skr, spurt)
+		artifact = sanitize_for_json(artifact)
 		with open(args.artifact_json, 'w') as f:
-			json.dump(artifact, f, indent='\t')
+			# allow_nan=False: the sanitize_for_json pass above should have already caught
+			# every non-finite value, but fail loudly here rather than silently emitting
+			# invalid JSON (a bare NaN/Infinity token) if it ever misses a new one.
+			json.dump(artifact, f, indent='\t', allow_nan=False)
 		eprint(f"wrote {args.artifact_json}")
 
 	if args.plot:

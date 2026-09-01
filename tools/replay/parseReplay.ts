@@ -60,6 +60,14 @@ export interface HorseResult {
 	wizOrder: number;
 	lastSpurtStartDistance: number;
 	runningStyle: number; // 0=NONE 1=NIGE(Front) 2=SENKO(Pace) 3=SASHI(Late) 4=OIKOMI(End)
+	// The game's own post-race "reason you lost" analysis tag, NOT a boolean DQ/DNF flag --
+	// every horse in every race has a truthy value here (1=Win is itself a truthy code).
+	// Decoded across all 540 horse-results in the champions-meeting-10903 corpus: 1=Win,
+	// 2=Lose, 4=Temptaion [sic, the game's own typo], 5=GutsOrder, 8=LastSpurtTargetSpeedDec,
+	// 9=PassiveSkillNum, 10=BlockFrontTime, 11=Speed, 12=ProperDistance, 14=Motivation.
+	// There is no DQ/DNF concept observed anywhere in that corpus (finishOrder is always a
+	// clean 0..8 permutation, no sentinel finishTimeRaw, no horse ending short of course
+	// distance) -- don't build a "skip defeated horses" filter off this field alone.
 	defeat: number;
 	finishTimeRaw: number;
 }

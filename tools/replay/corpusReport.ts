@@ -35,8 +35,8 @@ import * as fs from 'fs';
 import * as path from 'path';
 
 import { CourseHelpers } from '../../CourseData';
-import { run, HorseDiffResult, DiffSample } from './replayDiff';
-import { parseReplayFile } from './parseReplay';
+import { run, HorseDiffResult, DiffSample, rms, mean } from './replayDiff';
+import { parseReplayFile, ParsedReplay } from './parseReplay';
 
 interface OwnRunRecord {
 	own: true;
@@ -101,6 +101,13 @@ interface Manifest {
 	// This field is that same information; don't add a separate manifest counter that would
 	// just duplicate it unless replayDiff.ts grows a genuine partial-skip case.
 	runsBuildFailed: {file: string; horseIndex: number; message: string}[];
+	// A horse can also end up with zero samples for a reason that isn't a build failure at
+	// all: replayDiff.ts's per-sample guard (`if (t > realFinish) return`) skips every
+	// sample if the replay's own realFinishTime falls before its first recorded frame
+	// timestamp. Not currently reachable in the champions-meeting-10903 corpus (every
+	// file's first frame is at t=0), but kept distinct from runsBuildFailed so a future
+	// corpus with that shape doesn't get miscounted as "unknown build failure."
+	runsZeroSamplesButBuilt: {file: string; horseIndex: number; message: string}[];
 	duplicateActivationsCollapsed: number;
 }
 
@@ -119,9 +126,6 @@ interface CorpusReport {
 	runs: RunRecord[];
 	reseed?: {seeds: number; perRun: ReseedRunEntry[]};
 }
-
-const rms = (xs: number[]) => xs.length ? Math.sqrt(xs.reduce((a, b) => a + b * b, 0) / xs.length) : null;
-const mean = (xs: number[]) => xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : null;
 
 function skillLevels(raceHorse: any): number[] {
 	return ((raceHorse.responseHorseData.skill_array || []) as {level: number}[]).map(s => s.level);
@@ -192,7 +196,7 @@ function buildCorpusReport(dir: string, reseedSeeds: number): CorpusReport {
 	let courseDistance: number | null = null;
 	const manifest: Manifest = {
 		filesScanned: 0, filesFailed: [], runsAttempted: 0, runsBuildFailed: [],
-		duplicateActivationsCollapsed: 0,
+		runsZeroSamplesButBuilt: [], duplicateActivationsCollapsed: 0,
 	};
 	const runs: RunRecord[] = [];
 	const reseedPerRun: ReseedRunEntry[] = [];
@@ -217,9 +221,9 @@ function buildCorpusReport(dir: string, reseedSeeds: number): CorpusReport {
 	for (const f of files) {
 		manifest.filesScanned++;
 		const full = path.join(dir, f);
-		let json: any, results: HorseDiffResult[];
+		let json: any, parsed: ParsedReplay, results: HorseDiffResult[];
 		try {
-			({json} = parseReplayFile(full));
+			({json, parsed} = parseReplayFile(full));
 			if (courseSetId == null) {
 				courseSetId = json.raceCourseSet.id;
 			} else if (json.raceCourseSet.id !== courseSetId) {
@@ -239,10 +243,29 @@ function buildCorpusReport(dir: string, reseedSeeds: number): CorpusReport {
 			manifest.runsAttempted++;
 			manifest.duplicateActivationsCollapsed += r.skillsDuplicateActivations;
 			if (r.samples.length === 0) {
-				manifest.runsBuildFailed.push({
-					file: f, horseIndex: r.horseIndex,
-					message: r.skillsSkippedUnregisteredCondition[r.skillsSkippedUnregisteredCondition.length - 1] || 'unknown build failure',
-				});
+				// skillsSkippedUnregisteredCondition is only ever populated by a genuine
+				// build() failure (replayDiff.ts's catch block) -- use it as the primary
+				// discriminator instead of assuming samples.length===0 always means a
+				// build failure. Number.isNaN(r.simMaxHp) is the structural cross-check:
+				// it stays at its NaN initializer unless the post-race writeback
+				// (replayDiff.ts:413) ran, which only happens on a real build.
+				if (r.skillsSkippedUnregisteredCondition.length > 0) {
+					manifest.runsBuildFailed.push({
+						file: f, horseIndex: r.horseIndex,
+						message: r.skillsSkippedUnregisteredCondition[r.skillsSkippedUnregisteredCondition.length - 1],
+					});
+				} else if (Number.isNaN(r.simMaxHp)) {
+					// Neither signal fired -- genuinely unexplained, keep the old bucket
+					// and fallback message rather than inventing a classification.
+					manifest.runsBuildFailed.push({
+						file: f, horseIndex: r.horseIndex, message: 'unknown build failure',
+					});
+				} else {
+					manifest.runsZeroSamplesButBuilt.push({
+						file: f, horseIndex: r.horseIndex,
+						message: "realFinishTime before replay's first recorded frame -- solver built successfully",
+					});
+				}
 				continue;
 			}
 
@@ -281,8 +304,15 @@ function buildCorpusReport(dir: string, reseedSeeds: number): CorpusReport {
 		}
 
 		// Re-seed pass, own runs only -- Headline A's within-build sim-RNG floor only needs
-		// the 4x15 own-trainer repeats. Re-running the whole 9-horse race M times per file
-		// is cheap (~7ms/call measured) but pointless for horses the analysis never reads.
+		// the own-trainer repeats (however many own builds/races the corpus has). Re-running
+		// the whole 9-horse race M times per file is required for correct physics (blocking/
+		// spot-struggle/dueling all read every horse's state -- see run()'s opts doc comment),
+		// but re-parsing the file from disk and re-collecting non-own horses' samples on every
+		// one of the M seeds is pure waste: this loop is ~99% of this script's total runtime
+		// at the default M=100. Reuse this file's already-parsed {json, parsed} (100 parses ->
+		// 1) and gate sample collection to just the own-horse indices (100x fewer DiffSample
+		// allocations) -- neither changes which horses get built/stepped, so the physics, and
+		// therefore simFinishTime/simDistAtRealFinish, are unaffected.
 		// Captures simDistAtRealFinish (not just simFinishTime) per seed, so sigma_simRNG can
 		// be measured directly in the same finishPosErrBasinn units as the headline itself,
 		// rather than approximated from a finish-time spread via a speed conversion.
@@ -291,10 +321,11 @@ function buildCorpusReport(dir: string, reseedSeeds: number): CorpusReport {
 				.map((rh: any, i: number) => rh.trainerName === playerTrainerName ? i : -1)
 				.filter((i: number) => i !== -1);
 			if (ownHorseIndices.length > 0) {
+				const ownHorseIndexSet = new Set<number>(ownHorseIndices);
 				const perHorse = new Map<number, {simFinishTimes: (number | null)[]; finishPosErrBasinn: (number | null)[]}>(
 					ownHorseIndices.map((i: number) => [i, {simFinishTimes: [], finishPosErrBasinn: []}]));
 				for (let seed = 0; seed < reseedSeeds; seed++) {
-					const reseedResults = run(full, seed);
+					const reseedResults = run(full, seed, {preParsed: {json, parsed}, sampleHorseIndices: ownHorseIndexSet});
 					for (const i of ownHorseIndices) {
 						const rr = reseedResults[i];
 						const acc = perHorse.get(i)!;
@@ -342,7 +373,7 @@ function main() {
 		console.error(`${report.manifest.filesFailed.length} file(s) failed to parse:`);
 		for (const f of report.manifest.filesFailed) console.error(`  ${f.file}: ${f.message}`);
 	}
-	console.error(`corpusReport: ${report.manifest.filesScanned} files scanned, ${report.manifest.runsAttempted} runs attempted, ${report.manifest.runsBuildFailed.length} build failures, ${report.manifest.duplicateActivationsCollapsed} duplicate activations collapsed`);
+	console.error(`corpusReport: ${report.manifest.filesScanned} files scanned, ${report.manifest.runsAttempted} runs attempted, ${report.manifest.runsBuildFailed.length} build failures, ${report.manifest.runsZeroSamplesButBuilt.length} zero-sample-but-built, ${report.manifest.duplicateActivationsCollapsed} duplicate activations collapsed`);
 }
 
 if (require.main === module) {

@@ -77,7 +77,8 @@ distance/speed/HP/lane/blocking/temptation for every horse, per-horse finish res
 full skill/event stream) into plain TypeScript objects, for checking this engine against real
 game output. Built for PIPE-21 in `uma-tools-plans` — see that ticket for the corpus this was
 verified against and what it's being used for (a private-repo tracker; no link here — see
-`CLAUDE.md`'s never-link-the-private-repo-from-a-public-repo rule). `npx ts-node
+`uma-tools`' `CLAUDE.md`'s never-link-the-private-repo-from-a-public-repo rule — this
+repo's own `CLAUDE.md` doesn't carry that rule itself). `npx ts-node
 tools/replay/parseReplay.ts <race.json>` prints a summary (header fields,
 horse results, per-horse skill activation timeline); `npx ts-node tools/replay/parseReplay.ts
 --all <dir>` sweeps a directory and reports parse success/failure per file. `deserialize()`,

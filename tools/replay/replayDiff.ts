@@ -120,6 +120,19 @@ function currentSpeedOf(s: RaceSolver): number {
 	return s.currentSpeed + s.modifiers.currentSpeed.acc + s.modifiers.currentSpeed.err;
 }
 
+// Shared with corpusReport.ts (PIPE-37) -- previously duplicated with a behavior
+// difference on empty input (this file's own inline copies returned NaN; corpusReport.ts's
+// returned null). null is the version every caller actually wants: corpusReport.ts relies
+// on it directly (`mean(levels) ?? 0`), and this file's own summarize() is guarded against
+// empty input one line above every call site, so the null branch is never exercised here.
+function rms(xs: number[]): number | null {
+	return xs.length ? Math.sqrt(xs.reduce((a, b) => a + b * b, 0) / xs.length) : null;
+}
+
+function mean(xs: number[]): number | null {
+	return xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : null;
+}
+
 function buildHorseDesc(raceHorse: any, courseSurface: number, courseDistanceType: number): HorseDesc {
 	const rd = raceHorse.responseHorseData;
 	const surfaceInt = courseSurface === 1 ? rd.proper_ground_turf : rd.proper_ground_dirt;
@@ -199,8 +212,20 @@ export interface HorseDiffResult {
 	samples: DiffSample[];
 }
 
-function run(replayPath: string, seedOverride?: number) {
-	const {json, parsed} = parseReplayFile(replayPath);
+// opts is purely additive (PIPE-37): both fields are for corpusReport.ts's --reseed pass,
+// which calls run() up to 100x per file under different seeds but only ever reads out the
+// own-trainer horses' results. Neither field changes any solver's physics -- preParsed
+// only skips the redundant re-parse-from-disk, and sampleHorseIndices only gates which
+// horses' *samples* get collected (line ~409 below), never which horses get built or
+// stepped (every horse must still be built/stepped for blocking/spot-struggle/dueling to
+// behave identically to the unfiltered run). Omitting opts entirely reproduces the exact
+// prior default behavior/output.
+function run(
+	replayPath: string,
+	seedOverride?: number,
+	opts?: {preParsed?: {json: any; parsed: ParsedReplay}; sampleHorseIndices?: Set<number>},
+) {
+	const {json, parsed} = opts?.preParsed ?? parseReplayFile(replayPath);
 	const courseSetId = json.raceCourseSet.id;
 	const course = CourseHelpers.getCourse(courseSetId);
 	const timeline = skillTimeline(parsed);
@@ -377,6 +402,7 @@ function run(replayPath: string, seedOverride?: number) {
 			const t = parsed.frame[nextSampleIdx].time;
 			solvers.forEach((s, h) => {
 				if (s == null) return;
+				if (opts?.sampleHorseIndices != null && !opts.sampleHorseIndices.has(h)) return;
 				// Stop comparing a horse once EITHER side of the comparison has finished --
 				// not just the sim's own finish. The old guard truncated only on the sim's
 				// finish, so real post-finish run-out distance (real horses keep moving for
@@ -432,11 +458,11 @@ function summarize(results: HorseDiffResult[]) {
 		const distErrs = r.samples.map(s => s.simDist - s.realDist);
 		const speedErrs = r.samples.map(s => s.simSpeed - s.realSpeed);
 		const hpErrs = r.samples.map(s => s.simHp - s.realHp);
-		const rms = (xs: number[]) => Math.sqrt(xs.reduce((a, b) => a + b * b, 0) / xs.length);
-		const mean = (xs: number[]) => xs.reduce((a, b) => a + b, 0) / xs.length;
-		console.log(`  distance error: mean=${mean(distErrs).toFixed(2)}m rms=${rms(distErrs).toFixed(2)}m (n=${r.samples.length})`);
-		console.log(`  speed error:    mean=${mean(speedErrs).toFixed(3)}m/s rms=${rms(speedErrs).toFixed(3)}m/s`);
-		console.log(`  hp error:       mean=${mean(hpErrs).toFixed(1)} rms=${rms(hpErrs).toFixed(1)} (real hp0=${r.samples[0].realHp})`);
+		// Non-null assertions: samples.length===0 already continued above, so distErrs/
+		// speedErrs/hpErrs are non-empty here and rms()/mean() cannot return null.
+		console.log(`  distance error: mean=${mean(distErrs)!.toFixed(2)}m rms=${rms(distErrs)!.toFixed(2)}m (n=${r.samples.length})`);
+		console.log(`  speed error:    mean=${mean(speedErrs)!.toFixed(3)}m/s rms=${rms(speedErrs)!.toFixed(3)}m/s`);
+		console.log(`  hp error:       mean=${mean(hpErrs)!.toFixed(1)} rms=${rms(hpErrs)!.toFixed(1)} (real hp0=${r.samples[0].realHp})`);
 		if (r.simFinishTime != null) {
 			const finishErr = r.simFinishTime - r.realFinishTime;
 			console.log(`  finish time:    sim=${r.simFinishTime.toFixed(4)}s real=${r.realFinishTime.toFixed(4)}s err=${finishErr >= 0 ? '+' : ''}${finishErr.toFixed(4)}s`);
@@ -455,4 +481,4 @@ if (require.main === module) {
 	summarize(results);
 }
 
-export { run, summarize };
+export { run, summarize, rms, mean };
