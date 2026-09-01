@@ -24,8 +24,11 @@
 //   do NOT apply them here, just divide.
 // - SKILL event param[0] is a 0-based horseIndex (not `frame_order`), param[1] is the
 //   skillId, param[2] is duration in 1e-4s (already distance-scaled, -1 for t=0 passives).
-// - horseResult.finishOrder here is 0-based; the JSON's own top-level `raceHorse[].finishOrder`
-//   is 1-based. Don't conflate the two.
+// - horseResult.finishOrder here is 0-based -- and so, actually, is the JSON's own
+//   top-level raceHorse[].finishOrder (verified across all 20 corpus files: observed
+//   range 0..8 for a 9-horse field). An earlier version of this comment claimed the
+//   top-level field was 1-based; that was wrong (PIPE-37). This file only ever reads the
+//   binary horseResult.finishOrder, so nothing downstream was affected -- just the doc.
 // - Frame cadence is NOT a uniform 1/15s: dense (0.0666s) for the first ~1.07s and last
 //   ~2.8s of the race, sparse (1.0656s, every 16th tick) for the middle ~97%. Don't assume
 //   evenly-spaced frames.
@@ -49,7 +52,7 @@ export interface Frame {
 }
 
 export interface HorseResult {
-	finishOrder: number; // 0-based (contrast with the JSON's own 1-based raceHorse[].finishOrder)
+	finishOrder: number; // 0-based -- same as the JSON's own top-level raceHorse[].finishOrder (see the file header)
 	finishTime: number;
 	finishDiffTime: number;
 	startDelayTime: number;
@@ -57,6 +60,14 @@ export interface HorseResult {
 	wizOrder: number;
 	lastSpurtStartDistance: number;
 	runningStyle: number; // 0=NONE 1=NIGE(Front) 2=SENKO(Pace) 3=SASHI(Late) 4=OIKOMI(End)
+	// The game's own post-race "reason you lost" analysis tag, NOT a boolean DQ/DNF flag --
+	// every horse in every race has a truthy value here (1=Win is itself a truthy code).
+	// Decoded across all 540 horse-results in the champions-meeting-10903 corpus: 1=Win,
+	// 2=Lose, 4=Temptaion [sic, the game's own typo], 5=GutsOrder, 8=LastSpurtTargetSpeedDec,
+	// 9=PassiveSkillNum, 10=BlockFrontTime, 11=Speed, 12=ProperDistance, 14=Motivation.
+	// There is no DQ/DNF concept observed anywhere in that corpus (finishOrder is always a
+	// clean 0..8 permutation, no sentinel finishTimeRaw, no horse ending short of course
+	// distance) -- don't build a "skip defeated horses" filter off this field alone.
 	defeat: number;
 	finishTimeRaw: number;
 }

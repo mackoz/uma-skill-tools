@@ -32,6 +32,17 @@
 // the measured before/after regression numbers. Any output from this harness now reflects
 // the *fixed* measurement apparatus; don't compare it against PIPE-21-era numbers without
 // accounting for this.
+//
+// PIPE-37: widened the reported surface for a corpus-wide accuracy report (see
+// tools/replay/corpusReport.ts) without touching anything summarize() prints -- that text
+// is PIPE-36's frozen regression baseline. HorseDiffResult/DiffSample are now exported,
+// hpOf/currentSpeedOf/maxHpOf are exported, run() takes an optional seed override (default
+// behavior unchanged -- corpusReport.ts uses it to re-seed one race under many seeds to
+// estimate the sim's own run-to-run spread), and each solver now steps past its own finish
+// line (if it crosses before the real horse's recorded finish time) so simDistAtRealFinish
+// can be *interpolated*, never extrapolated -- see the primary-metric note at that field's
+// declaration below for why this, not a time-times-speed conversion, is what umalator's own
+// バ身 unit actually needs. Sample truncation (min of the two finish times) is untouched.
 
 import * as fs from 'fs';
 import * as path from 'path';
@@ -101,8 +112,25 @@ function hpOf(s: RaceSolver): number {
 	return s.hp instanceof GameHpPolicy ? s.hp.hp : NaN;
 }
 
+function maxHpOf(s: RaceSolver): number {
+	return s.hp instanceof GameHpPolicy ? s.hp.maxHp : NaN;
+}
+
 function currentSpeedOf(s: RaceSolver): number {
 	return s.currentSpeed + s.modifiers.currentSpeed.acc + s.modifiers.currentSpeed.err;
+}
+
+// Shared with corpusReport.ts (PIPE-37) -- previously duplicated with a behavior
+// difference on empty input (this file's own inline copies returned NaN; corpusReport.ts's
+// returned null). null is the version every caller actually wants: corpusReport.ts relies
+// on it directly (`mean(levels) ?? 0`), and this file's own summarize() is guarded against
+// empty input one line above every call site, so the null branch is never exercised here.
+function rms(xs: number[]): number | null {
+	return xs.length ? Math.sqrt(xs.reduce((a, b) => a + b * b, 0) / xs.length) : null;
+}
+
+function mean(xs: number[]): number | null {
+	return xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : null;
 }
 
 function buildHorseDesc(raceHorse: any, courseSurface: number, courseDistanceType: number): HorseDesc {
@@ -132,7 +160,14 @@ function buildHorseDesc(raceHorse: any, courseSurface: number, courseDistanceTyp
 	};
 }
 
-interface HorseDiffResult {
+export interface DiffSample {
+	time: number;
+	simDist: number; realDist: number;
+	simSpeed: number; realSpeed: number;
+	simHp: number; realHp: number;
+}
+
+export interface HorseDiffResult {
 	horseIndex: number;
 	name: string;
 	skillsInBuild: number;
@@ -142,11 +177,55 @@ interface HorseDiffResult {
 	skillsSkippedUnregisteredCondition: string[];
 	realFinishTime: number;
 	simFinishTime: number | null; // null if the safety valve tripped before this horse crossed the line
-	samples: {time: number; simDist: number; realDist: number; simSpeed: number; realSpeed: number; simHp: number; realHp: number}[];
+	// PIPE-37: interpolated sim distance at the *real* horse's recorded finish time -- the
+	// primary error metric for the corpus-wide accuracy report is
+	// (simDistAtRealFinish - course.distance) / 2.5, matching what umalator itself reports
+	// (posDifference / 2.5, umalator/compare.ts:608) -- a position gap at a common time, not
+	// a (simFinishTime - realFinishTime) * speed conversion, which would inherit the sim's
+	// own speed error and needs a speed value this harness doesn't otherwise emit. null only
+	// if the safety valve tripped before simTime reached realFinishTime.
+	simDistAtRealFinish: number | null;
+	// Post-race sim-side state, for the corpus report's HP/spurt-timing measurements.
+	// lastSpurtTransition/fullSpurt are computed lazily inside the per-step update
+	// (RaceSolver.ts:1341-1350) -- reading them requires the race to have actually reached
+	// that point, so these are read once after the horse stops stepping, not at build time.
+	simMaxHp: number;
+	// -1 has two possible causes, both legitimate: the race never reached phase 2 (shouldn't
+	// happen for a full race), or -- far more commonly, verified this session at 173/180
+	// corpus runs -- the horse achieved a full spurt from the phase-2 boundary itself
+	// (HpPolicy.ts's getLastSpurtPair returns [-1, maxSpeed] exactly when hp >= hpNeeded for
+	// the whole final stretch; simFullSpurt is true in that case). Check simFullSpurt to
+	// distinguish the two before treating -1 as "never reached phase 2".
+	simLastSpurtTransition: number;
+	simFullSpurt: boolean;
+	simNonFullSpurtDelayDistance: number | null;
+	// Replay-side echoes, so one object carries the whole per-run record without a second
+	// parseReplayFile() pass at the call site.
+	realLastSpurtStartDistance: number;
+	runningStyle: number; // HorseResult.runningStyle: 0=NONE 1=NIGE 2=SENKO 3=SASHI 4=OIKOMI
+	blockedFrameCount: number;
+	temptationFrameCount: number;
+	temptationModeMax: number;
+	realHp0: number;
+	startDelayTime: number;
+	realFinishOrder: number;
+	samples: DiffSample[];
 }
 
-function run(replayPath: string) {
-	const {json, parsed} = parseReplayFile(replayPath);
+// opts is purely additive (PIPE-37): both fields are for corpusReport.ts's --reseed pass,
+// which calls run() up to 100x per file under different seeds but only ever reads out the
+// own-trainer horses' results. Neither field changes any solver's physics -- preParsed
+// only skips the redundant re-parse-from-disk, and sampleHorseIndices only gates which
+// horses' *samples* get collected (line ~409 below), never which horses get built or
+// stepped (every horse must still be built/stepped for blocking/spot-struggle/dueling to
+// behave identically to the unfiltered run). Omitting opts entirely reproduces the exact
+// prior default behavior/output.
+function run(
+	replayPath: string,
+	seedOverride?: number,
+	opts?: {preParsed?: {json: any; parsed: ParsedReplay}; sampleHorseIndices?: Set<number>},
+) {
+	const {json, parsed} = opts?.preParsed ?? parseReplayFile(replayPath);
 	const courseSetId = json.raceCourseSet.id;
 	const course = CourseHelpers.getCourse(courseSetId);
 	const timeline = skillTimeline(parsed);
@@ -161,7 +240,7 @@ function run(replayPath: string) {
 		const raceHorse = json.raceHorse[h];
 		const desc = buildHorseDesc(raceHorse, course.surface, course.distanceType);
 		const b = new RaceSolverBuilder(1)
-			.seed(json.randomSeed >>> 0) // does NOT reproduce real activation timing -- see file header
+			.seed((seedOverride ?? json.randomSeed) >>> 0) // does NOT reproduce real activation timing -- see file header
 			.mode('compare') // without this the builder attaches NoopHpPolicy, not GameHpPolicy (RaceSolverBuilder.ts:879) -- HP would silently read as NaN
 			.course(courseSetId)
 			.ground(json.groundCondition)
@@ -196,6 +275,17 @@ function run(replayPath: string) {
 			b.addSkillAtPosition(String(a.skillId), pos);
 		}
 
+		// PIPE-37: blocked/temptation-frame counts, straight off the parsed replay -- both
+		// fields exist on ParsedReplay already (parseReplay.ts's HorseFrame) but were unread
+		// by this file before now.
+		let blockedFrameCount = 0, temptationFrameCount = 0, temptationModeMax = 0;
+		for (const f of parsed.frame) {
+			const hf = f.horseFrame[h];
+			if (hf.blockFrontHorseIndex !== -1) blockedFrameCount++;
+			if (hf.temptationMode !== 0) temptationFrameCount++;
+			if (hf.temptationMode > temptationModeMax) temptationModeMax = hf.temptationMode;
+		}
+
 		builders.push(b);
 		diffResults.push({
 			horseIndex: h, name: raceHorse.charaName,
@@ -203,6 +293,14 @@ function run(replayPath: string) {
 			skillsDuplicateActivations: duplicateActivations,
 			skillsSkippedUnregisteredCondition: [],
 			realFinishTime: parsed.horseResult[h].finishTimeRaw, simFinishTime: null,
+			simDistAtRealFinish: null,
+			simMaxHp: NaN, simLastSpurtTransition: NaN, simFullSpurt: false, simNonFullSpurtDelayDistance: null,
+			realLastSpurtStartDistance: parsed.horseResult[h].lastSpurtStartDistance,
+			runningStyle: parsed.horseResult[h].runningStyle,
+			blockedFrameCount, temptationFrameCount, temptationModeMax,
+			realHp0: parsed.frame[0].horseFrame[h].hp,
+			startDelayTime: parsed.horseResult[h].startDelayTime,
+			realFinishOrder: parsed.horseResult[h].finishOrder,
 			samples: [],
 		});
 	}
@@ -236,7 +334,15 @@ function run(replayPath: string) {
 	});
 
 	const dt = 1 / 15;
-	const finished = solvers.map(s => s == null);
+	// crossedFinish tracks whether this horse's own finish-line crossing (pos >= course.distance)
+	// has already been detected -- distinct from "done stepping" (see stepDone below). A horse
+	// that crosses its own finish line before the *real* horse's recorded finish time keeps
+	// stepping past that point (PIPE-37) so simDistAtRealFinish can be interpolated instead of
+	// extrapolated -- see that field's declaration for why this is the primary error metric.
+	const crossedFinish = solvers.map(s => s == null);
+	function stepDone(h: number): boolean {
+		return solvers[h] == null || (crossedFinish[h] && diffResults[h].simDistAtRealFinish !== null);
+	}
 	// State at the START of the current step, per horse -- used to interpolate both the
 	// sim's state at each replay sample time and the exact finish-line crossing time,
 	// rather than reading a fixed post-step value. This is what actually removes the two
@@ -253,12 +359,12 @@ function run(replayPath: string) {
 	// the replay is downsampled (sparse ~1.07s cadence for 97% of the race, see PIPE-21).
 	let nextSampleIdx = 0;
 	let simTime = 0;
-	while (!finished.every(f => f)) {
+	while (!solvers.every((s, h) => stepDone(h))) {
 		const stepStart = simTime;
 		solvers.forEach((s, h) => {
-			if (s == null || finished[h]) return;
-			before[h] = {time: stepStart, pos: s.pos, speed: currentSpeedOf(s), hp: hpOf(s)};
-			s.step(dt);
+			if (stepDone(h)) return;
+			before[h] = {time: stepStart, pos: s!.pos, speed: currentSpeedOf(s!), hp: hpOf(s!)};
+			s!.step(dt);
 		});
 		simTime += dt;
 
@@ -267,12 +373,28 @@ function run(replayPath: string) {
 		// +0.033s (~0.7m) bias against the replay's own (effectively exact) finishTimeRaw,
 		// measured as >1% of the corpus's entire 2.99s finish-time spread (PIPE-36).
 		solvers.forEach((s, h) => {
-			if (s == null || finished[h]) return;
+			if (s == null || crossedFinish[h]) return;
 			if (s.pos >= course.distance) {
 				const b = before[h];
 				const ratio = s.pos > b.pos ? (course.distance - b.pos) / (s.pos - b.pos) : 0;
 				diffResults[h].simFinishTime = b.time + ratio * dt;
-				finished[h] = true;
+				crossedFinish[h] = true;
+			}
+		});
+
+		// PIPE-37: interpolate the sim's distance at the *real* horse's own recorded finish
+		// time, the moment simTime first reaches it -- independent of whether this horse has
+		// crossed its own finish line yet (a horse that finishes slower in the sim than in
+		// reality reaches this before crossedFinish[h] goes true; one that finishes faster
+		// reaches it in the same step crossedFinish[h] does, from the extra steps stepDone
+		// keeps allowing above).
+		solvers.forEach((s, h) => {
+			if (s == null || diffResults[h].simDistAtRealFinish !== null) return;
+			const realFinish = diffResults[h].realFinishTime;
+			if (simTime >= realFinish) {
+				const b = before[h];
+				const ratio = simTime > b.time ? (realFinish - b.time) / (simTime - b.time) : 0;
+				diffResults[h].simDistAtRealFinish = b.pos + (s.pos - b.pos) * ratio;
 			}
 		});
 
@@ -280,6 +402,7 @@ function run(replayPath: string) {
 			const t = parsed.frame[nextSampleIdx].time;
 			solvers.forEach((s, h) => {
 				if (s == null) return;
+				if (opts?.sampleHorseIndices != null && !opts.sampleHorseIndices.has(h)) return;
 				// Stop comparing a horse once EITHER side of the comparison has finished --
 				// not just the sim's own finish. The old guard truncated only on the sim's
 				// finish, so real post-finish run-out distance (real horses keep moving for
@@ -307,6 +430,18 @@ function run(replayPath: string) {
 		if (simTime > 200) break; // safety valve
 	}
 
+	// Post-race sim-side state, read once stepping has stopped (or the safety valve tripped)
+	// rather than at build time -- lastSpurtTransition/fullSpurt are computed lazily inside
+	// the per-step update (RaceSolver.ts:1341-1350, updateLastSpurtState) and are only
+	// meaningful once the race has actually reached that point.
+	solvers.forEach((s, h) => {
+		if (s == null) return;
+		diffResults[h].simMaxHp = maxHpOf(s);
+		diffResults[h].simLastSpurtTransition = s.lastSpurtTransition;
+		diffResults[h].simFullSpurt = s.fullSpurt;
+		diffResults[h].simNonFullSpurtDelayDistance = s.nonFullSpurtDelayDistance;
+	});
+
 	return diffResults;
 }
 
@@ -323,11 +458,11 @@ function summarize(results: HorseDiffResult[]) {
 		const distErrs = r.samples.map(s => s.simDist - s.realDist);
 		const speedErrs = r.samples.map(s => s.simSpeed - s.realSpeed);
 		const hpErrs = r.samples.map(s => s.simHp - s.realHp);
-		const rms = (xs: number[]) => Math.sqrt(xs.reduce((a, b) => a + b * b, 0) / xs.length);
-		const mean = (xs: number[]) => xs.reduce((a, b) => a + b, 0) / xs.length;
-		console.log(`  distance error: mean=${mean(distErrs).toFixed(2)}m rms=${rms(distErrs).toFixed(2)}m (n=${r.samples.length})`);
-		console.log(`  speed error:    mean=${mean(speedErrs).toFixed(3)}m/s rms=${rms(speedErrs).toFixed(3)}m/s`);
-		console.log(`  hp error:       mean=${mean(hpErrs).toFixed(1)} rms=${rms(hpErrs).toFixed(1)} (real hp0=${r.samples[0].realHp})`);
+		// Non-null assertions: samples.length===0 already continued above, so distErrs/
+		// speedErrs/hpErrs are non-empty here and rms()/mean() cannot return null.
+		console.log(`  distance error: mean=${mean(distErrs)!.toFixed(2)}m rms=${rms(distErrs)!.toFixed(2)}m (n=${r.samples.length})`);
+		console.log(`  speed error:    mean=${mean(speedErrs)!.toFixed(3)}m/s rms=${rms(speedErrs)!.toFixed(3)}m/s`);
+		console.log(`  hp error:       mean=${mean(hpErrs)!.toFixed(1)} rms=${rms(hpErrs)!.toFixed(1)} (real hp0=${r.samples[0].realHp})`);
 		if (r.simFinishTime != null) {
 			const finishErr = r.simFinishTime - r.realFinishTime;
 			console.log(`  finish time:    sim=${r.simFinishTime.toFixed(4)}s real=${r.realFinishTime.toFixed(4)}s err=${finishErr >= 0 ? '+' : ''}${finishErr.toFixed(4)}s`);
@@ -346,4 +481,4 @@ if (require.main === module) {
 	summarize(results);
 }
 
-export { run, summarize };
+export { run, summarize, rms, mean };

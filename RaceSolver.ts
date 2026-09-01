@@ -1362,6 +1362,15 @@ export class RaceSolver {
 			this.targetSpeed = this.lastSpurtSpeed;
 		} else {
 			this.targetSpeed = this.baseTargetSpeed[this.phase] * this.posKeepSpeedCoef;
+			// Invariant that keeps this index in-bounds (sectionModifier has 25 entries,
+			// 0..24, the last one an explicit "runs off the end of the track" slot -- see
+			// its construction above): isLastSpurt latches true (below, in
+			// updateLastSpurtState(), called before updateTargetSpeed() in step()) the
+			// moment pos >= lastSpurtTransition, and every HpPolicy getLastSpurtPair()
+			// return path bounds lastSpurtTransition <= course.distance -- so by the first
+			// step where pos >= course.distance, isLastSpurt is already true and this
+			// branch is never reached again. Don't reorder step()'s two calls without
+			// re-checking this.
 			this.targetSpeed += this.sectionModifier[Math.floor(this.pos / this.sectionLength)];
 		}
 		this.targetSpeed += this.modifiers.targetSpeed.acc + this.modifiers.targetSpeed.err;
