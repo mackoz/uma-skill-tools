@@ -23,12 +23,15 @@ activated, reading a permanent 0% proc.
 
 Add `is_activate_any_skill: noopImmediate` to `conditionsWithActivateCountsAsRandom`.
 
-`noopImmediate`, not `noopRandom` like the six `activate_count_*` neighbors: those model a
-*count/distance threshold* (e.g. "activated a skill in the middle phase at least twice"), which a
-random sampling window over a plausible region approximates reasonably. `is_activate_any_skill` has
-no threshold to sample against — its base form is an instantaneous per-frame check with no distance
-component at all — so treating it as unconditionally satisfied (an `Immediate` trigger, full course
-region) matches its own semantics more closely than inventing a sampling window would.
+`noopImmediate`, not the region-sampled `random({filterGte...})` shape most of the six
+`activate_count_*` neighbors use (`activate_count_all`/`_end_after`/`_later_half`/`_middle` model a
+*count/distance threshold* — e.g. "activated a skill in the middle phase at least twice" — with a
+random sampling window over a plausible region; only `activate_count_heal` is a plain `noopRandom`
+like this entry's sample policy, and `activate_count_start` is `immediate` outright).
+`is_activate_any_skill` has no threshold to sample against — its base form is an instantaneous
+per-frame check with no distance component at all — so treating it as unconditionally satisfied (an
+`Immediate` trigger, full course region) matches its own semantics more closely than inventing a
+sampling window would.
 
 Checked before committing to this: every unique in either the JP or Global dataset currently using
 `is_activate_any_skill` also carries its own phase/corner/style clauses in the same alternative

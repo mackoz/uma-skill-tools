@@ -31,3 +31,4 @@ Numbers are never reused or renumbered, even if a record is retired — gaps are
 | [0007](0007-pacer-triggers-once-per-slot.md) | Pacer skill triggers sampled once per slot, not per scenario | Accepted |
 | [0008](0008-spot-struggle-geometry-field-derived-state.md) | Spot Struggle's trigger/exit geometry derives state from the field, adds no race object | Accepted |
 | [0009](0009-replay-validation-manual-capability.md) | Replay validation is a manual capability, not a committed regression test | Accepted |
+| [0010](0010-activate-counts-as-random-is-activate-any-skill.md) | `conditionsWithActivateCountsAsRandom` now shadows `is_activate_any_skill` | Accepted |
