@@ -2,7 +2,7 @@ import { HorseParameters, Strategy, Aptitude, StrategyProficiencyModifier } from
 import { CourseData, CourseHelpers, DistanceType } from './CourseData';
 import { Region, RegionList } from './Region';
 import { deriveSeed, Rule30CARng, SeededRng } from './Random';
-import { Conditions, random, immediate, noopRandom } from './ActivationConditions';
+import { Conditions, random, immediate, noopRandom, noopImmediate } from './ActivationConditions';
 import { ActivationSamplePolicy, ImmediatePolicy } from './ActivationSamplePolicy';
 import { getParser } from './ConditionParser';
 import { RaceSolver, RaceState, PendingSkill, DynamicCondition, SkillType, SkillRarity, SkillEffect, Perspective, PosKeepMode } from './RaceSolver';
@@ -386,7 +386,15 @@ export const conditionsWithActivateCountsAsRandom = Object.freeze(Object.assign(
 			const bounds = new Region(CourseHelpers.phaseStart(course.distance, 0), CourseHelpers.phaseEnd(course.distance, 0));
 			return regions.rmap(r => r.intersect(bounds));
 		}
-	})
+	}),
+	// Base definition (ActivationConditions.ts) is `s.activateCountLastFrame > 0` -- true the frame
+	// after *any* skill activates. Unlike the six activate_count_* names above (distance/count
+	// thresholds we can approximate with a region), this is an instantaneous per-frame check, so
+	// noopImmediate ("unconditionally satisfied") matches its own semantics more closely than
+	// noopRandom would -- there's no threshold to turn into a sampling window. Every unique
+	// currently using this condition also carries its own phase/corner/style clauses, so this
+	// doesn't degenerate into "fires at the start line" -- those clauses still bound it.
+	is_activate_any_skill: noopImmediate
 }));
 
 const defaultParser = getParser();

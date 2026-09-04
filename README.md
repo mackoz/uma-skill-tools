@@ -63,6 +63,16 @@ Same naming-mismatch bug class as the `running_style_temptation_opponent_count_*
 
 Four condition names that were hitting exactly this crash are now real implementations instead of missing entirely: `is_activate_any_skill` (extended to also count skills forced via `doActivateRandomGold`/Adventure of 564), `order_rate_in50_continue` (one-line addition to the existing `orderInFilter`/`orderOutFilter` family — same static-`orderRange` caveat as the rest of that family, see above), `last_straight_random` (built the same way as `phase_straight_random`/`is_last_straight`, just without the phase bounds), and `activate_count_later_half` (a new `activateCountLaterHalf` counter on `RaceState`, incremented for `pos >= course.distance / 2`).
 
+`is_activate_any_skill`'s real implementation above is a genuine dynamic check —
+`s.activateCountLastFrame > 0`, true only the frame after some *other* skill has actually fired.
+`RaceSolverBuilder.ts`'s `conditionsWithActivateCountsAsRandom` (see ADR-0010) shadows it with an
+unconditionally-satisfied stand-in, alongside the six `activate_count_*` names' own stand-ins
+(mostly region-sampled, except `activate_count_heal`, which is unconditionally-satisfied the same
+way) for callers that opt into `withActivateCountsAsRandom()` — that shadow only applies when a
+caller explicitly asks for it (uma-tools' Course Chart, and the `basinnhyou.ts` CLI tool it's
+descended from); the real
+dynamic check above remains the default for every other caller.
+
 Eighteen condition names used by shipped skills remain unregistered and will still throw the new named `ParseError`: three that ship on Global too — `temptation_opponent_count_behind`/`temptation_opponent_count_infront` and `is_other_character_activate_advantage_skill` — plus fifteen JP-only names (`fan_count`, `furlong`, `is_abroad`, `is_activate_heal_skill`, `is_exist_skill_id`, `is_goodstart`, `is_popularity_top_character_activate_advantage_skill`, `is_used_skill_id_with_detail_one`, `near_infront_count`, `phase_first_half_straight_random`, `phase_laterhalf`, `phase_latter_half_straight_random`, `run_at_full_speed_random`, `succession_skill_count`, `up_slope_random_later_half` — the last four newly observed in this refresh's `master_jp.mdb`, tracked in plans' SKL-24).
 
 ## Scaling effects are not implemented
