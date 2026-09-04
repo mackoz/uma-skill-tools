@@ -11,7 +11,7 @@ import { getParser } from '../ConditionParser';
 import { RaceSolver, DynamicCondition, SkillType, SkillRarity, SkillEffect } from '../RaceSolver';
 import { NoopHpPolicy } from '../HpPolicy';
 
-import skills from '../data/skill_data.json';
+import skills from '../data/jp/skill_data.json';
 
 const { parse, tokenize } = getParser();
 

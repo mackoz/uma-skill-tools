@@ -11,7 +11,7 @@ import { buildBaseStats, buildSkillData, conditionsWithActivateCountsAsRandom, P
 import { getParser } from '../ConditionParser';
 import { Region, RegionList } from '../Region';
 import { RaceState } from '../RaceSolver';
-import courseData from '../data/course_data.json';
+import courseData from '../data/jp/course_data.json';
 
 const SKILL_ID = '120011';
 // Any course where phase 2 doesn't coincide with the very start -- 120011's condition is

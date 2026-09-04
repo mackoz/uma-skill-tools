@@ -3,8 +3,8 @@ import * as fc from 'fast-check';
 import * as rparams from '../../RaceParameters';
 import * as build from '../../RaceSolverBuilder';
 
-import courses from '../../data/course_data.json';
-import skills from '../../data/skill_data.json';
+import courses from '../../data/jp/course_data.json';
+import skills from '../../data/jp/skill_data.json';
 
 const courseids = Object.freeze(Object.keys(courses));
 const skillids = Object.freeze(Object.keys(skills).filter(id => {

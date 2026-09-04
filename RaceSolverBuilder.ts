@@ -9,7 +9,7 @@ import { RaceSolver, RaceState, PendingSkill, DynamicCondition, SkillType, Skill
 import { Mood, GroundCondition, Weather, Season, Time, Grade, RaceParameters } from './RaceParameters';
 import { GameHpPolicy, NoopHpPolicy } from './HpPolicy';
 
-import skills from './data/skill_data.json';
+import skills from './data/jp/skill_data.json';
 
 type PartialRaceParameters = Omit<{ -readonly [K in keyof RaceParameters]: RaceParameters[K] }, 'skillId'>;
 
