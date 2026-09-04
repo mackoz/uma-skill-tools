@@ -3,8 +3,8 @@ import { program, Option } from 'commander';
 import { getParser } from '../ConditionParser';
 import { mockConditions, treeMatch } from './ConditionMatcher';
 
-import skills from '../data/skill_data.json';
-import skillnames from '../data/skillnames.json';
+import skills from '../data/jp/skill_data.json';
+import skillnames from '../data/jp/skillnames.json';
 
 program
 	.argument('<condition>', 'Condition to search for. May be a condition name (e.g. blocked_side_continuetime), an expression (corner==0&order_rate<80), or, if --name is specified, a skill name.')

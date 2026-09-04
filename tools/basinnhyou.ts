@@ -17,8 +17,8 @@ import {
 import { ErlangRandomPolicy } from '../ActivationSamplePolicy';
 import { mockConditions } from './ConditionMatcher';
 
-import skills from '../data/skill_data.json';
-import skillnames from '../data/skillnames.json';
+import skills from '../data/jp/skill_data.json';
+import skillnames from '../data/jp/skillnames.json';
 
 program
 	.argument('<cmdef>', 'path to CM definition file')

@@ -52,7 +52,7 @@ import { RaceSolver } from '../../RaceSolver';
 import { GameHpPolicy } from '../../HpPolicy';
 import { Strategy, Aptitude } from '../../HorseTypes';
 import { CourseHelpers } from '../../CourseData';
-import skillData from '../../data/skill_data.json';
+import skillData from '../../data/jp/skill_data.json';
 
 import { parseReplayFile, ParsedReplay, skillTimeline, Frame, HorseFrame } from './parseReplay';
 
