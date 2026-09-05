@@ -277,8 +277,8 @@ const RUNNING_STYLE_NAME: Record<number, string> = {
 function main() {
 	const args = process.argv.slice(2);
 	if (args.length === 0) {
-		console.error('usage: ts-node parseReplay.ts <race.json>');
-		console.error('       ts-node parseReplay.ts --all <dir>');
+		console.error('usage: tsx parseReplay.ts <race.json>');
+		console.error('       tsx parseReplay.ts --all <dir>');
 		process.exit(1);
 	}
 	if (args[0] === '--all') {

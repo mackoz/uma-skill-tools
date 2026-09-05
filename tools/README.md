@@ -1,14 +1,14 @@
 # Command status
 
-Run TypeScript tools through the repository-local dependency, for example `npx ts-node tools/skillgrep.ts --help` from the repo root (or `npx ts-node skillgrep.ts --help` from this directory).
+Run TypeScript tools through the repository-local dependency, for example `npx tsx tools/skillgrep.ts --help` from the repo root (or `npx tsx skillgrep.ts --help` from this directory).
 
-As of HP-5/PIPE-22 (`RaceSolverBuilder.ts`'s dead `EnhancedHpPolicy` import and missing `HorseDesc.skills` field both fixed), `skillgrep.ts`, `compare.ts`, and `speedguts.ts` all compile and show their help normally. `gain.ts` and `dump.ts` are still blocked before execution by pre-existing TypeScript/API drift unrelated to HP-5: both still construct `RaceSolver` with the removed `pacer` property, and `dump.ts` also references removed pacing fields. Their sections below document the intended interfaces, but those commands need code repair before they can be used. See `../CLAUDE.md` for the complete 12-error typecheck baseline.
+As of HP-5/PIPE-22 (`RaceSolverBuilder.ts`'s dead `EnhancedHpPolicy` import and missing `HorseDesc.skills` field both fixed), `skillgrep.ts`, `compare.ts`, and `speedguts.ts` all compile and show their help normally. `gain.ts` and `dump.ts` are still blocked before execution by pre-existing TypeScript/API drift unrelated to HP-5: both still construct `RaceSolver` with the removed `pacer` property, and `dump.ts` also references removed pacing fields. Their sections below document the intended interfaces, but those commands need code repair before they can be used. See `../CLAUDE.md` for the complete 7-error typecheck baseline (`npm run typecheck`).
 
 # skillgrep.ts
 
 Search skills by name or condition. For conditions it may be either just a condition name (e.g. phase_random) or a full condition specification with & and/or @. Order doesn't matter, so phase_random==1&running_style==3 matches running_style==3&phase_random==1. Partial condition names don't work.
 
-Has a number of options controlling the output and what is searched. Run `npx ts-node skillgrep.ts --help` for a list.
+Has a number of options controlling the output and what is searched. Run `npx tsx skillgrep.ts --help` for a list.
 
 Notably it searches conditions by default and you have to use the `-N` or `--name` option to search skill names. Unlike conditions names can be a partial match and can be given in English or Japanese. Romanized Japanese does not match.
 
@@ -25,7 +25,7 @@ Has a fairly large number of options, but the most important are:
 - `--nsamples <integer>` Number of times to simulate races. Min/max/median/mean バ身 gain is reported from the results. Defaults to 500. You may want to increase it if you're comparing multiple random skills at once, to try to cover more pairs of random activation points. The simulator is relatively fast.
 - `--dump` Intended to be piped into histogram.py to show a histogram of バ身 gain instead of just reporting a summary.
 
-Once its API drift is repaired, run `npx ts-node gain.ts --help` for a full list.
+Once its API drift is repaired, run `npx tsx gain.ts --help` for a full list.
 
 Any skills you want both simulations to have should be specified in the uma definition file. There is a default file for each strategy:
 
@@ -48,7 +48,7 @@ gain.ts output includes the lines `min configuration: ` and `max configuration: 
 
 Takes two uma definition files and runs simulations with each of them to compare the results.
 
-This is intended for comparisons that can't be made with gain.ts, for example comparing umas with different stats or comparing completely different sets of skills. Run `npx ts-node compare.ts --help` for options, but they're mostly the same as gain.ts.
+This is intended for comparisons that can't be made with gain.ts, for example comparing umas with different stats or comparing completely different sets of skills. Run `npx tsx compare.ts --help` for options, but they're mostly the same as gain.ts.
 
 # plot.py
 
@@ -78,9 +78,9 @@ full skill/event stream) into plain TypeScript objects, for checking this engine
 game output. Built for PIPE-21 in `uma-tools-plans` — see that ticket for the corpus this was
 verified against and what it's being used for (a private-repo tracker; no link here — see
 `uma-tools`' `CLAUDE.md`'s never-link-the-private-repo-from-a-public-repo rule — this
-repo's own `CLAUDE.md` doesn't carry that rule itself). `npx ts-node
+repo's own `CLAUDE.md` doesn't carry that rule itself). `npx tsx
 tools/replay/parseReplay.ts <race.json>` prints a summary (header fields,
-horse results, per-horse skill activation timeline); `npx ts-node tools/replay/parseReplay.ts
+horse results, per-horse skill activation timeline); `npx tsx tools/replay/parseReplay.ts
 --all <dir>` sweeps a directory and reports parse success/failure per file. `deserialize()`,
 `parseReplayFile()`, and `skillTimeline()` are also exported for use from other scripts. Only
 implements the Global-client parser path (hakuraku also has a separate JP-client parser this
@@ -97,10 +97,12 @@ rather than read from a fixed post-step position — PIPE-36 fixed several measu
 biases in this comparison loop itself (a sim-vs-replay timestep drift, a post-step sampling
 lag, an independently-drawn start delay, post-finish sample contamination, and a rounded-up
 finish time), so error numbers from before that fix aren't comparable to numbers after it.
-`npx ts-node tools/replay/replayDiff.ts <race.json>` prints per-horse error stats. Runs
-under plain `ts-node` — the `RaceSolverBuilder.ts` per-file typecheck failures this used to
-hit (HP-5's dead `EnhancedHpPolicy` import, PIPE-22's missing `HorseDesc.skills` field) are
-both fixed. Also built for PIPE-21; documents its own modeling simplifications (dropped
+`npx tsx tools/replay/replayDiff.ts <race.json>` prints per-horse error stats. Runs
+under plain `tsx`, which does not typecheck — the `RaceSolverBuilder.ts` errors this file
+used to trip under `ts-node`'s per-file typecheck (HP-5's dead `EnhancedHpPolicy` import,
+PIPE-22's missing `HorseDesc.skills` field) are fixed regardless, but that class of failure
+can no longer surface at run time here at all; `npm run typecheck` is the standalone check now.
+Also built for PIPE-21; documents its own modeling simplifications (dropped
 never-activated skills, no cross-horse debuff targeting, static order assumption) in its
 file header — read those before trusting a diff number at face value. PIPE-37 widened its
 reported surface for `corpusReport.ts` below (exported `HorseDiffResult`/`DiffSample`, an
@@ -116,7 +118,7 @@ guard from `measureDownhill.ts` below, the per-file try/catch isolation from
 `run()` over each file, and emits one JSON document privacy-redacted at construction time
 (see the file's own header comment for the redaction rule — it's an allowlist built
 field-by-field, not a denylist stripped off a richer object, and the publish gate is
-structural string equality, never a substring/`grep` check). `npx ts-node
+structural string equality, never a substring/`grep` check). `npx tsx
 tools/replay/corpusReport.ts <corpus-dir> [--reseed N]` (`--reseed`, default 100, re-runs
 each own-trainer horse under N seeds to measure the sim's own run-to-run spread — set to 0
 to skip that pass). Built for PIPE-37; its own comments document exactly what's redacted
@@ -137,7 +139,7 @@ not subsetting; where the pass/fail calibration citation came from).
 Corpus-level measurement, no simulator run: cross-checks the engine's downhill accel-mode HP
 and speed effects against real replay data over a directory of same-course replays, using
 hakuraku's own HP-drain-based downhill-mode detector (independent of the speed effect being
-measured). `npx ts-node tools/replay/measureDownhill.ts <dir>`. Written for PIPE-21's SPD-7
+measured). `npx tsx tools/replay/measureDownhill.ts <dir>`. Written for PIPE-21's SPD-7
 measurement pass; documents in its own comments why the speed-side result is confounded (other
 low-HP-consumption states like PaceDown get caught by the same threshold) and shouldn't be
 read as decisive on its own.

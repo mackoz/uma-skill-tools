@@ -1,6 +1,7 @@
-// Runs under plain `ts-node` -- no TS_NODE_TRANSPILE_ONLY needed. RaceSolverBuilder.ts
-// used to fail ts-node's per-file typecheck on two pre-existing issues (HP-5's dead
-// EnhancedHpPolicy import, PIPE-22's HorseDesc missing a `skills` field), both fixed.
+// Runs under `tsx` (PIPE-52) -- a pure esbuild transform with no per-file typecheck, so the
+// RaceSolverBuilder.ts issues this file used to trip under ts-node's per-file typecheck
+// (HP-5's dead EnhancedHpPolicy import, PIPE-22's HorseDesc missing a `skills` field) are
+// moot either way: both are fixed, and `npm run typecheck` is the standalone check now.
 //
 // PIPE-21 step 2: one-race physics diff. Build all 9 horses from a single replay, pin
 // every skill to activate at its recorded position (never chase RNG parity -- see
@@ -476,7 +477,7 @@ function summarize(results: HorseDiffResult[]) {
 
 if (require.main === module) {
 	const file = process.argv[2];
-	if (!file) { console.error('usage: ts-node replayDiff.ts <race.json>'); process.exit(1); }
+	if (!file) { console.error('usage: tsx replayDiff.ts <race.json>'); process.exit(1); }
 	const results = run(file);
 	summarize(results);
 }

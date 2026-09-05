@@ -4,7 +4,7 @@
 // simulator run -- pure corpus measurement over a directory of decoded replays.
 //
 // Settles (partially) SPD-7 -- see that ticket for the two competing formulas this
-// was built to distinguish. Run: `npx ts-node tools/replay/measureDownhill.ts <dir>`.
+// was built to distinguish. Run: `npx tsx tools/replay/measureDownhill.ts <dir>`.
 import * as fs from 'fs';
 import * as path from 'path';
 
@@ -113,7 +113,7 @@ function run(dir: string) {
 
 if (require.main === module) {
 	const dir = process.argv[2];
-	if (!dir) { console.error('usage: ts-node measureDownhill.ts <dir of replay JSONs, all the same course>'); process.exit(1); }
+	if (!dir) { console.error('usage: tsx measureDownhill.ts <dir of replay JSONs, all the same course>'); process.exit(1); }
 	run(dir);
 }
 
