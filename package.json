@@ -10,7 +10,7 @@
   "author": "pecan",
   "license": "GPL-3.0-or-later",
   "devDependencies": {
-    "@types/node": "^24",
+    "@types/node": "^24.0.0",
     "@types/tape": "^4.13.2",
     "fast-check": "^3.0.1",
     "tape": "^5.5.3",
