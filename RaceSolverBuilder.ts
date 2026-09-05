@@ -252,7 +252,8 @@ function buildSkillEffects(skill, perspective: Perspective) {
 		type: SkillType.hasOwnProperty(ef.type) && isTarget(perspective, ef.target) ? ef.type : SkillType.Noop,
 		// ANCHOR: base-duration-scaling
 		baseDuration: skill.baseDuration / 10000,
-		modifier: ef.modifier / 10000
+		modifier: ef.modifier / 10000,
+		valueUsage: ef.valueUsage
 	}));
 }
 

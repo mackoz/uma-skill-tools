@@ -18,7 +18,8 @@ const skillids = Object.freeze(Object.keys(skills).filter(id => {
 		strategy: 'Nige',
 		distanceAptitude: 'A',
 		surfaceAptitude: 'A',
-		strategyAptitude: 'A'
+		strategyAptitude: 'A',
+		mood: 2
 	}).addSkill(id);
 	try {
 		const g = b.build();

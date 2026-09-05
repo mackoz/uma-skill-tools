@@ -204,6 +204,7 @@ export interface SkillEffect {
 	type: SkillType
 	baseDuration: number
 	modifier: number
+	valueUsage?: number
 }
 
 export interface PendingSkill {
@@ -247,6 +248,7 @@ export class RaceSolver {
 	downhillRng: PRNG[]
 	sectionSpeedRng: PRNG
 	skillWisdomSeed: number
+	skillValueSeed: number
 	posKeepRng: PRNG
 	laneMovementRng: PRNG
 	specialConditionRng: PRNG
@@ -411,6 +413,7 @@ export class RaceSolver {
 		const wisdomSeed = this.rng.int32();
 		this.sectionSpeedRng = new Rule30CARng(wisdomSeed);
 		this.skillWisdomSeed = deriveSeed(wisdomSeed, 'skill-wisdom');
+		this.skillValueSeed = deriveSeed(wisdomSeed, 'skill-value');
 		this.posKeepRng = new Rule30CARng(this.rng.int32());
 		this.laneMovementRng = new Rule30CARng(this.rng.int32());
 		this.specialConditionRng = new Rule30CARng(this.rng.int32());
