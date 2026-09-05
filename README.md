@@ -75,9 +75,11 @@ dynamic check above remains the default for every other caller.
 
 Eighteen condition names used by shipped skills remain unregistered and will still throw the new named `ParseError`: three that ship on Global too — `temptation_opponent_count_behind`/`temptation_opponent_count_infront` and `is_other_character_activate_advantage_skill` — plus fifteen JP-only names (`fan_count`, `furlong`, `is_abroad`, `is_activate_heal_skill`, `is_exist_skill_id`, `is_goodstart`, `is_popularity_top_character_activate_advantage_skill`, `is_used_skill_id_with_detail_one`, `near_infront_count`, `phase_first_half_straight_random`, `phase_laterhalf`, `phase_latter_half_straight_random`, `run_at_full_speed_random`, `succession_skill_count`, `up_slope_random_later_half` — the last four newly observed in this refresh's `master_jp.mdb`, tracked in plans' SKL-24).
 
-## Scaling effects are not implemented
+## Scaling effects
 
-The value-scaling (1–25), duration-scaling (1–7), and skill-level (1–10) tables aren't modeled — the per-skill values used are whatever the data pipeline extracted for whatever level/scaling state that data happens to reflect, not a selectable parameter.
+The duration-scaling (1–7) and skill-level (1–10) tables still aren't modeled — the per-skill values used are whatever the data pipeline extracted for whatever level/scaling state that data happens to reflect, not a selectable parameter.
+
+Value scaling (`ability_value_usage`, 1–25) is now partially implemented, HP-6: `data/{jp,global}/skill_data.json` carries a `valueUsage` field on every effect object (`tools/make_skill_data.pl` selects it straight from `master.mdb`'s `ability_value_usage_{1,2}_{1,2,3}` columns), and `RaceSolver.ts`'s `scaleEffectValue()` implements the "Multiply Random" roll for usage codes 8 and 9: 60% of activations scale the modifier to 0.0x, 30% to 0.02x, 10% to 0.04x, drawn per activation from a `Rule30CARng` keyed by `(skillValueSeed, skillId, perspective, effectIdx, activationCount)` — deliberately not a shared sequential stream, for the same reason `checkWisdomForSkill()` isn't (see that function's own comment). Every other usage code, including the common case 1 ("Direct"), still passes the modifier through completely unscaled; the remaining 23 usage codes aren't modeled beyond that pass-through.
 
 ## Skill cooldowns
 
