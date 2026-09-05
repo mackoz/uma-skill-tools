@@ -4,7 +4,7 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "test": "ts-node test/parser.ts && ts-node test/activation-sampling.ts && ts-node test/rushed-escape-roll.ts && ts-node test/spot-struggle-duration.ts && ts-node test/spot-struggle-group.ts && ts-node test/activate-counts-as-random.ts && ts-node test/value-scaling-roll.ts"
+    "test": "ts-node test/parser.ts && ts-node test/activation-sampling.ts && ts-node test/rushed-escape-roll.ts && ts-node test/spot-struggle-duration.ts && ts-node test/spot-struggle-group.ts && ts-node test/activate-counts-as-random.ts && ts-node test/value-scaling-roll.ts && ts-node test/race.ts -n 500 && ts-node test/regression/check.ts --fast"
   },
   "author": "pecan",
   "license": "GPL-3.0-or-later",
