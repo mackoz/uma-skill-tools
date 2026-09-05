@@ -15,7 +15,10 @@ program
 program.parse();
 const options = program.opts();
 
-const cases = JSON.parse(fs.readFileSync(program.args[0], 'utf-8')).map(c => c.params);
+// checkpoint files legitimately include cases whose builder threw at record time (result.err === true,
+// e.g. one of the still-unregistered activation conditions -- see CLAUDE.md's Known gaps section);
+// there's nothing to benchmark for those, and re-building one here would throw the same way.
+const cases = JSON.parse(fs.readFileSync(program.args[0], 'utf-8')).filter(c => !c.result.err).map(c => c.params);
 
 console.time('all');
 

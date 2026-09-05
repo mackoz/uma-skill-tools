@@ -1,6 +1,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import * as fc from 'fast-check';
+import { execFileSync } from 'child_process';
 import { program, Option } from 'commander';
 
 import * as arb from '../arb/Race';
@@ -53,8 +54,10 @@ fc.sample(arb.Race(), options.tests).forEach(params => {
 });
 
 let root = path.resolve(path.dirname(process.argv[1]), '..', '..');
-const head = fs.readFileSync(path.join(root, '.git', 'HEAD'), 'utf-8').trim();
-const rev = head.startsWith('ref: ') ? fs.readFileSync(path.join(root, '.git', head.slice(5)), 'utf-8').trim() : head;
+// NB. this repo is normally checked out as a git submodule (of mackoz/uma-tools), where `.git` is a
+// plain "gitdir: <path>" pointer file, not a directory -- manually parsing .git/HEAD as if it were a
+// real gitdir breaks in that layout. `git rev-parse` resolves either shape correctly.
+const rev = execFileSync('git', ['rev-parse', 'HEAD'], {cwd: root, encoding: 'utf-8'}).trim();
 const date = new Date().toISOString().slice(0,10).replace(/-/g,'');  // why does this godforsaken programming language not have normal date formatting
 const outfile = path.join(path.dirname(process.argv[1]), 'checkpoints', date + '.' + rev.slice(0,7) + '.' + options.seed + '.json');
 
