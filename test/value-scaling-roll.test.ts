@@ -10,7 +10,8 @@
 // PendingSkill/SkillEffect arguments passed in -- it doesn't call any sibling method on `this` --
 // so the stub carries just those two fields, same minimal-stub spirit as
 // test/rushed-escape-roll.ts's makeRushedStub.
-import test from 'tape';
+import { test } from 'vitest';
+import { strictEqual, ok } from 'node:assert/strict';
 import { RaceSolver, Perspective, SkillType, PendingSkill, SkillEffect } from '../RaceSolver';
 import { attachMethods, seededSubStream } from './RaceSolverTestHelpers';
 
@@ -48,7 +49,7 @@ function bucket(scale: number): 0 | 1 | 2 {
 	return 2;
 }
 
-test('value-scaling roll distribution matches 60%/30%/10% at 0.0x/0.02x/0.04x', t => {
+test('value-scaling roll distribution matches 60%/30%/10% at 0.0x/0.02x/0.04x', () => {
 	const samples = 30000;
 	const nextSeed = seededSubStream(13);
 	const counts = [0, 0, 0];
@@ -56,17 +57,15 @@ test('value-scaling roll distribution matches 60%/30%/10% at 0.0x/0.02x/0.04x', 
 		counts[bucket(draw(nextSeed(), 'skill', 0, 0))]++;
 	}
 	const pct = (n: number) => (100 * counts[n]) / samples;
-	t.ok(Math.abs(pct(0) - 60) < 2, `0.0x ~60% (got ${pct(0).toFixed(2)}%)`);
-	t.ok(Math.abs(pct(1) - 30) < 2, `0.02x ~30% (got ${pct(1).toFixed(2)}%)`);
-	t.ok(Math.abs(pct(2) - 10) < 2, `0.04x ~10% (got ${pct(2).toFixed(2)}%)`);
-	t.end();
+	ok(Math.abs(pct(0) - 60) < 2, `0.0x ~60% (got ${pct(0).toFixed(2)}%)`);
+	ok(Math.abs(pct(1) - 30) < 2, `0.02x ~30% (got ${pct(1).toFixed(2)}%)`);
+	ok(Math.abs(pct(2) - 10) < 2, `0.04x ~10% (got ${pct(2).toFixed(2)}%)`);
 });
 
-test('determinism: the same key reproduces the same draw', t => {
+test('determinism: the same key reproduces the same draw', () => {
 	const a = draw(555, 'skill', 2, 3);
 	const b = draw(555, 'skill', 2, 3);
-	t.equal(a, b, 'identical (skillValueSeed, skillId, perspective, effectIdx, activationCount) draws identically');
-	t.end();
+	strictEqual(a, b, 'identical (skillValueSeed, skillId, perspective, effectIdx, activationCount) draws identically');
 });
 
 // Ruling 2 (task-2-brief.md controller rulings): the property that protects umalator's A/B
@@ -76,7 +75,7 @@ test('determinism: the same key reproduces the same draw', t => {
 // shift the stream position and desync every subsequent draw for A. Exercising ONE persistent
 // stub instance across A/B/A -- rather than a fresh stub per draw() -- means any such hidden
 // shared state inside the stub would actually surface here.
-test('draw-order independence: an interleaved draw for a different skill does not perturb this skill\'s value', t => {
+test('draw-order independence: an interleaved draw for a different skill does not perturb this skill\'s value', () => {
 	const stub = makeStub(777);
 	const drawOn = (skillId: string, effectIdx: number, activationCount: number) => {
 		stub.skillActivationCounts.set(`${skillId}:${Perspective.Self}`, activationCount);
@@ -88,33 +87,30 @@ test('draw-order independence: an interleaved draw for a different skill does no
 	drawOn('skillB', 1, 5); // a second interleaved draw, different key entirely
 	const a2 = drawOn('skillA', 0, 0);
 
-	t.equal(a1, a2, 'skill A draws the same value both times despite interleaved skill B draws');
-	t.end();
+	strictEqual(a1, a2, 'skill A draws the same value both times despite interleaved skill B draws');
 });
 
-test('independence: different effectIdx values on one skill are not forced equal', t => {
+test('independence: different effectIdx values on one skill are not forced equal', () => {
 	const nextSeed = seededSubStream(2024);
 	let sawDifference = false;
 	for (let i = 0; i < 200 && !sawDifference; ++i) {
 		const seed = nextSeed();
 		if (draw(seed, 'skill', 0, 0) !== draw(seed, 'skill', 1, 0)) sawDifference = true;
 	}
-	t.ok(sawDifference, 'effectIdx participates in the key -- varying it changes the roll at least sometimes');
-	t.end();
+	ok(sawDifference, 'effectIdx participates in the key -- varying it changes the roll at least sometimes');
 });
 
-test('independence: different activationCount values on one skill are not forced equal', t => {
+test('independence: different activationCount values on one skill are not forced equal', () => {
 	const nextSeed = seededSubStream(4048);
 	let sawDifference = false;
 	for (let i = 0; i < 200 && !sawDifference; ++i) {
 		const seed = nextSeed();
 		if (draw(seed, 'skill', 0, 0) !== draw(seed, 'skill', 0, 1)) sawDifference = true;
 	}
-	t.ok(sawDifference, 'activationCount participates in the key -- varying it changes the roll at least sometimes');
-	t.end();
+	ok(sawDifference, 'activationCount participates in the key -- varying it changes the roll at least sometimes');
 });
 
-test('independence: effectIdx and activationCount streams are not correlated with each other', t => {
+test('independence: effectIdx and activationCount streams are not correlated with each other', () => {
 	// If effectIdx were (incorrectly) ignored, drawing at effectIdx 0 and 1 across many
 	// activationCounts would match every single time. Two truly-independent 3-outcome draws
 	// (60/30/10) agree with probability 0.6^2+0.3^2+0.1^2 = 0.46; a bug that ties the two
@@ -128,20 +124,17 @@ test('independence: effectIdx and activationCount streams are not correlated wit
 		if (bucket(draw(seed, 'skill', 0, i)) === bucket(draw(seed, 'skill', 1, i))) matches++;
 	}
 	const rate = matches / samples;
-	t.ok(rate < 0.65, `effectIdx-0 vs effectIdx-1 match rate stays well under a forced-identical 1.0 (got ${rate.toFixed(3)})`);
-	t.end();
+	ok(rate < 0.65, `effectIdx-0 vs effectIdx-1 match rate stays well under a forced-identical 1.0 (got ${rate.toFixed(3)})`);
 });
 
-test('pass-through: valueUsage 1 ("Direct") leaves the modifier untouched', t => {
+test('pass-through: valueUsage 1 ("Direct") leaves the modifier untouched', () => {
 	const stub = makeStub(1);
 	const out = stub.scaleEffectValue(pendingSkill('skill'), effect(1, 5), 0);
-	t.equal(out.modifier, 5, 'modifier is unchanged when valueUsage is 1');
-	t.end();
+	strictEqual(out.modifier, 5, 'modifier is unchanged when valueUsage is 1');
 });
 
-test('pass-through: valueUsage undefined leaves the modifier untouched', t => {
+test('pass-through: valueUsage undefined leaves the modifier untouched', () => {
 	const stub = makeStub(1);
 	const out = stub.scaleEffectValue(pendingSkill('skill'), effect(undefined, 5), 0);
-	t.equal(out.modifier, 5, 'modifier is unchanged when valueUsage is undefined');
-	t.end();
+	strictEqual(out.modifier, 5, 'modifier is unchanged when valueUsage is undefined');
 });

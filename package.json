@@ -4,7 +4,7 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "test": "tsx test/parser.ts && tsx test/activation-sampling.ts && tsx test/rushed-escape-roll.ts && tsx test/spot-struggle-duration.ts && tsx test/spot-struggle-group.ts && tsx test/activate-counts-as-random.ts && tsx test/value-scaling-roll.ts && tsx test/race.ts -n 500 && tsx test/regression/check.ts --fast",
+    "test": "vitest run && tsx test/race.ts -n 500 && tsx test/regression/check.ts --fast",
     "typecheck": "tsc --noEmit"
   },
   "author": "pecan",
@@ -15,7 +15,9 @@
     "fast-check": "^3.0.1",
     "tape": "^5.5.3",
     "tsx": "^4.23.13",
-    "typescript": "^7.0.2"
+    "typescript": "^7.0.2",
+    "vite": "^8.2.2",
+    "vitest": "^5.0.0"
   },
   "dependencies": {
     "commander": "^9.3.0",

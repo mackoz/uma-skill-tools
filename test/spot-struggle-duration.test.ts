@@ -2,7 +2,8 @@
 // Front Runner struggled for the same ~11s as an A-aptitude one instead of ~1.1s. This pins the
 // fixed formula against hakuraku.moe/notes/spot-struggle's replay-frame measurements (the game's
 // own CompeteTop parameter block gives the S..G table: 1.1/1.0/0.85/0.75/0.6/0.4/0.2/0.1).
-import test from 'tape';
+import { test } from 'vitest';
+import { ok } from 'node:assert/strict';
 import { RaceSolver, Timer } from '../RaceSolver';
 import { Aptitude } from '../HorseTypes';
 import { attachMethods, stepUntilInactive } from './RaceSolverTestHelpers';
@@ -39,34 +40,30 @@ function spotStruggleDuration(guts: number, aptitude: Aptitude, dt = 1 / 15): nu
 const unmodified = (guts: number) => Math.pow(700 * guts, 0.5) * 0.012;
 const dt = 1 / 15;
 
-test('A-rank aptitude (1.0x) leaves the base duration unchanged', t => {
+test('A-rank aptitude (1.0x) leaves the base duration unchanged', () => {
 	// Regression guard on the refactor itself: A is the identity rank, so every A-aptitude
 	// result must be bit-for-bit what the engine produced before DYN-8.
 	const d = spotStruggleDuration(700, Aptitude.A);
-	t.ok(Math.abs(d - 8.4) < dt, `700 guts, A: ~8.4s (got ${d.toFixed(3)}s)`); // (700*700)^0.5*0.012
-	t.end();
+	ok(Math.abs(d - 8.4) < dt, `700 guts, A: ~8.4s (got ${d.toFixed(3)}s)`); // (700*700)^0.5*0.012
 });
 
-test('G-rank aptitude (0.1x) matches hakuraku Special Week (<1.8s, not ~11s)', t => {
+test('G-rank aptitude (0.1x) matches hakuraku Special Week (<1.8s, not ~11s)', () => {
 	const guts = 1200; // unmodified prediction ~= 11.0s, matching the note's stated baseline
 	const d = spotStruggleDuration(guts, Aptitude.G);
-	t.ok(Math.abs(d - 0.1 * unmodified(guts)) < dt, `1200 guts, G: ~1.10s (got ${d.toFixed(3)}s)`);
-	t.ok(d < 1.8, 'under the <1.8s observed replay bound, which the unmodified ~11s formula blows past');
-	t.end();
+	ok(Math.abs(d - 0.1 * unmodified(guts)) < dt, `1200 guts, G: ~1.10s (got ${d.toFixed(3)}s)`);
+	ok(d < 1.8, 'under the <1.8s observed replay bound, which the unmodified ~11s formula blows past');
 });
 
-test('D-rank aptitude (0.6x) matches hakuraku Super Creek (<7.13s)', t => {
+test('D-rank aptitude (0.6x) matches hakuraku Super Creek (<7.13s)', () => {
 	const guts = 1200;
 	const d = spotStruggleDuration(guts, Aptitude.D);
-	t.ok(Math.abs(d - 0.6 * unmodified(guts)) < dt, `1200 guts, D: ~6.60s (got ${d.toFixed(3)}s)`);
-	t.ok(d < 7.13, 'under the <7.13s observed replay bound');
-	t.end();
+	ok(Math.abs(d - 0.6 * unmodified(guts)) < dt, `1200 guts, D: ~6.60s (got ${d.toFixed(3)}s)`);
+	ok(d < 7.13, 'under the <7.13s observed replay bound');
 });
 
-test('S-rank aptitude (1.1x) matches hakuraku Bourbon (>= 1.06864x unmodified at 518 guts)', t => {
+test('S-rank aptitude (1.1x) matches hakuraku Bourbon (>= 1.06864x unmodified at 518 guts)', () => {
 	const guts = 518; // Bourbon's measured guts; unmodified = 7.226s, S-scaled = 7.949s
 	const d = spotStruggleDuration(guts, Aptitude.S);
-	t.ok(Math.abs(d - 1.1 * unmodified(guts)) < dt, `518 guts, S: ~7.95s (got ${d.toFixed(3)}s)`);
-	t.ok(d >= 1.06864 * unmodified(guts), 'clears the frame the replay proves she was still struggling on');
-	t.end();
+	ok(Math.abs(d - 1.1 * unmodified(guts)) < dt, `518 guts, S: ~7.95s (got ${d.toFixed(3)}s)`);
+	ok(d >= 1.06864 * unmodified(guts), 'clears the frame the replay proves she was still struggling on');
 });

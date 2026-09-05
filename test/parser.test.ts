@@ -1,5 +1,6 @@
 import * as fc from 'fast-check';
-import { prop, forAll } from './TestHelpers';
+import { prop } from './VitestProp';
+import { forAll } from './TestHelpers';
 
 import { 
 	Operator, CmpOperator, EqOperator, NeqOperator, LtOperator, LteOperator, GtOperator, GteOperator, AndOperator, OrOperator,

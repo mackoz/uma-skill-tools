@@ -1,4 +1,5 @@
-import test from 'tape';
+import { test } from 'vitest';
+import { strictEqual, notStrictEqual, ok, deepStrictEqual } from 'node:assert/strict';
 import { DistributionRandomPolicy, ErlangRandomPolicy, LogNormalRandomPolicy } from '../ActivationSamplePolicy';
 import { Region, RegionList } from '../Region';
 import { deriveSeed, PRNG, Rule30CARng } from '../Random';
@@ -10,40 +11,37 @@ function withinRange(values: number[]): boolean {
 	return values.every(value => Number.isFinite(value) && value >= 0 && value < RANGE);
 }
 
-test('lognormal samples have fixed bounds and prefix stability', t => {
+test('lognormal samples have fixed bounds and prefix stability', () => {
 	const policy = new LogNormalRandomPolicy(0, 1);
 	const one = policy.distribution(RANGE, 1, new Rule30CARng(12345));
 	const many = policy.distribution(RANGE, 101, new Rule30CARng(12345));
-	t.equal(one.length, 1, 'returns exactly one sample');
-	t.equal(many.length, 101, 'returns exactly the requested sample count');
-	t.equal(one[0], many[0], 'the first sample does not depend on requested count');
-	t.ok(withinRange(many), 'all samples remain within the course range');
-	t.ok(new Set(many.map(Math.round)).size > 20, 'samples retain a non-degenerate shape');
-	t.end();
+	strictEqual(one.length, 1, 'returns exactly one sample');
+	strictEqual(many.length, 101, 'returns exactly the requested sample count');
+	strictEqual(one[0], many[0], 'the first sample does not depend on requested count');
+	ok(withinRange(many), 'all samples remain within the course range');
+	ok(new Set(many.map(Math.round)).size > 20, 'samples retain a non-degenerate shape');
 });
 
-test('Erlang samples have exact quantile bounds and prefix stability', t => {
+test('Erlang samples have exact quantile bounds and prefix stability', () => {
 	const policy = new ErlangRandomPolicy(3, 0.5);
 	const one = policy.distribution(RANGE, 1, new Rule30CARng(54321));
 	const many = policy.distribution(RANGE, 101, new Rule30CARng(54321));
-	t.equal(one.length, 1, 'returns exactly one sample');
-	t.equal(many.length, 101, 'returns exactly the requested sample count');
-	t.equal(one[0], many[0], 'the first sample does not depend on requested count');
-	t.ok(withinRange(many), 'all samples remain within the course range');
-	t.ok(new Set(many.map(Math.round)).size > 20, 'samples retain a non-degenerate shape');
-	t.end();
+	strictEqual(one.length, 1, 'returns exactly one sample');
+	strictEqual(many.length, 101, 'returns exactly the requested sample count');
+	strictEqual(one[0], many[0], 'the first sample does not depend on requested count');
+	ok(withinRange(many), 'all samples remain within the course range');
+	ok(new Set(many.map(Math.round)).size > 20, 'samples retain a non-degenerate shape');
 });
 
-test('derived skill streams are stable and isolated', t => {
+test('derived skill streams are stable and isolated', () => {
 	const base = 8675309;
 	const skillA = new Rule30CARng(deriveSeed(base, '100001:0:0'));
 	const first = Array.from({length: 5}, () => skillA.random());
 	const unrelated = new Rule30CARng(deriveSeed(base, '200002:0:0'));
 	Array.from({length: 20}, () => unrelated.random());
 	const skillAAgain = new Rule30CARng(deriveSeed(base, '100001:0:0'));
-	t.deepEqual(first, Array.from({length: 5}, () => skillAAgain.random()), 'other skill streams cannot shift this skill');
-	t.notEqual(deriveSeed(base, '100001:0:0'), deriveSeed(base, '200002:0:0'), 'different keys derive different seeds');
-	t.end();
+	deepStrictEqual(first, Array.from({length: 5}, () => skillAAgain.random()), 'other skill streams cannot shift this skill');
+	notStrictEqual(deriveSeed(base, '100001:0:0'), deriveSeed(base, '200002:0:0'), 'different keys derive different seeds');
 });
 
 // SKL-29 regression. DistributionRandomPolicy.sample() maps a distribution draw -- an offset into
@@ -66,7 +64,7 @@ function regionList(bounds: [number, number][]) {
 // of `range`, so the cap `range * (1 - Number.EPSILON)` cannot be consumed by the walk.
 const OVERRUN_LAYOUT: [number, number][] = [[333.3333333333333, 375], [925, 1200], [1734, 2000]];
 
-test('an Erlang draw past its upper quantile stays inside the last region', t => {
+test('an Erlang draw past its upper quantile stays inside the last region', () => {
 	// End-to-end through a real policy: near_count's ErlangRandomPolicy(2, 2) (skill 910191). Its
 	// variate is -log(u)/lambda over a product of k uniforms, so a near-zero uniform stream drives
 	// it past the 99.9% quantile and saturates clampToCourseRange's upper bound. Erlang draws no
@@ -78,11 +76,10 @@ test('an Erlang draw past its upper quantile stays inside the last region', t =>
 	const samples = new ErlangRandomPolicy(2.0, 2.0).sample(regions, 1, saturatingRng);
 
 	const last = regions[regions.length - 1];
-	t.equal(samples.length, 1, 'returns exactly one sample');
-	t.ok(samples[0].start >= last.start && samples[0].start <= last.end,
+	strictEqual(samples.length, 1, 'returns exactly one sample');
+	ok(samples[0].start >= last.start && samples[0].start <= last.end,
 		'the saturated sample lands inside the last region');
-	t.equal(samples[0].end, last.end, 'the sample window ends at the containing region');
-	t.end();
+	strictEqual(samples[0].end, last.end, 'the sample window ends at the containing region');
 });
 
 // Drives sample()'s region walk directly at its boundary, without routing through a real
@@ -101,7 +98,7 @@ const NO_RNG = Object.freeze({
 	uniform: (_upper: number) => { throw new Error('unused'); }
 });
 
-test('the region walk never indexes past the last region, whatever offset it is handed', t => {
+test('the region walk never indexes past the last region, whatever offset it is handed', () => {
 	// every offset clampToCourseRange can emit, plus the out-of-contract ones the walk must still
 	// survive rather than throw on
 	const offsets: [string, (range: number) => number][] = [
@@ -129,7 +126,7 @@ test('the region walk never indexes past the last region, whatever offset it is 
 			if (clipped.length > 0) layouts.push(clipped);
 		}));
 	});
-	t.ok(layouts.length > 100, `the sweep covers a non-trivial number of real course layouts (${layouts.length})`);
+	ok(layouts.length > 100, `the sweep covers a non-trivial number of real course layouts (${layouts.length})`);
 
 	const failures: string[] = [];
 	const escaped: string[] = [];
@@ -152,12 +149,11 @@ test('the region walk never indexes past the last region, whatever offset it is 
 		}
 	}));
 
-	t.deepEqual(failures.slice(0, 3), [], `no layout/offset throws (${failures.length} of ${layouts.length * offsets.length} did)`);
-	t.deepEqual(escaped.slice(0, 3), [], `every sample lands inside one of its own regions (${escaped.length} did not)`);
-	t.end();
+	deepStrictEqual(failures.slice(0, 3), [], `no layout/offset throws (${failures.length} of ${layouts.length * offsets.length} did)`);
+	deepStrictEqual(escaped.slice(0, 3), [], `every sample lands inside one of its own regions (${escaped.length} did not)`);
 });
 
-test('interior offsets are unaffected by the bounds fix', t => {
+test('interior offsets are unaffected by the bounds fix', () => {
 	// the walk is correct for every offset that is not at the boundary, and must stay so: a sample
 	// at offset x sits x metres into the regions laid end to end.
 	const regions = regionList(OVERRUN_LAYOUT);
@@ -176,6 +172,5 @@ test('interior offsets are unaffected by the bounds fix', t => {
 		if (Math.abs(got - expected) > 1e-9) mismatches.push(`offset ${offset}: expected ${expected}, got ${got}`);
 	}
 
-	t.deepEqual(mismatches.slice(0, 3), [], `all 500 interior offsets map to the same position as before (${mismatches.length} did not)`);
-	t.end();
+	deepStrictEqual(mismatches.slice(0, 3), [], `all 500 interior offsets map to the same position as before (${mismatches.length} did not)`);
 });
