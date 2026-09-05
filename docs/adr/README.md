@@ -32,3 +32,4 @@ Numbers are never reused or renumbered, even if a record is retired — gaps are
 | [0008](0008-spot-struggle-geometry-field-derived-state.md) | Spot Struggle's trigger/exit geometry derives state from the field, adds no race object | Accepted |
 | [0009](0009-replay-validation-manual-capability.md) | Replay validation is a manual capability, not a committed regression test | Accepted |
 | [0010](0010-activate-counts-as-random-is-activate-any-skill.md) | `conditionsWithActivateCountsAsRandom` now shadows `is_activate_any_skill` | Accepted |
+| [0011](0011-pin-strict-false.md) | `tsconfig.json` pins `"strict": false` rather than inheriting TypeScript 7's default | Accepted |
