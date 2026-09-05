@@ -5,7 +5,7 @@ import { deriveSeed, Rule30CARng, SeededRng } from './Random';
 import { Conditions, random, immediate, noopRandom, noopImmediate } from './ActivationConditions';
 import { ActivationSamplePolicy, ImmediatePolicy } from './ActivationSamplePolicy';
 import { getParser } from './ConditionParser';
-import { RaceSolver, RaceState, PendingSkill, DynamicCondition, SkillType, SkillRarity, SkillEffect, Perspective, PosKeepMode } from './RaceSolver';
+import { RaceSolver, RaceState, PendingSkill, DynamicCondition, SkillType, SkillTypeValues, SkillRarity, SkillEffect, Perspective, PosKeepMode } from './RaceSolver';
 import { Mood, GroundCondition, Weather, Season, Time, Grade, RaceParameters } from './RaceParameters';
 import { GameHpPolicy, NoopHpPolicy } from './HpPolicy';
 
@@ -249,7 +249,7 @@ function isTarget(self: Perspective, targetType: SkillTarget) {
 
 function buildSkillEffects(skill, perspective: Perspective) {
 	return skill.effects.map(ef => ({
-		type: SkillType.hasOwnProperty(ef.type) && isTarget(perspective, ef.target) ? ef.type : SkillType.Noop,
+		type: SkillTypeValues.has(ef.type) && isTarget(perspective, ef.target) ? ef.type : SkillType.Noop,
 		// ANCHOR: base-duration-scaling
 		baseDuration: skill.baseDuration / 10000,
 		modifier: ef.modifier / 10000,

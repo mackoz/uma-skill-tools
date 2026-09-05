@@ -7,6 +7,10 @@ export const enum DistanceType { Short = 1, Mile, Mid, Long }
 export const enum Orientation { Clockwise = 1, Counterclockwise, UnusedOrientation, NoTurns }
 export const enum ThresholdStat { Speed = 1, Stamina, Power, Guts, Int }
 
+const SurfaceValues: ReadonlySet<number> = new Set([Surface.Turf, Surface.Dirt]);
+const DistanceTypeValues: ReadonlySet<number> = new Set([DistanceType.Short, DistanceType.Mile, DistanceType.Mid, DistanceType.Long]);
+const OrientationValues: ReadonlySet<number> = new Set([Orientation.Clockwise, Orientation.Counterclockwise, Orientation.UnusedOrientation, Orientation.NoTurns]);
+
 export interface CourseData {
 	readonly raceTrackId: number
 	readonly distance: number
@@ -34,15 +38,15 @@ export namespace CourseHelpers {
 	}
 
 	export function assertIsSurface(surface: number): asserts surface is Surface {
-		assert(Surface.hasOwnProperty(surface));
+		assert(SurfaceValues.has(surface));
 	}
 
 	export function assertIsDistanceType(distanceType: number): asserts distanceType is DistanceType {
-		assert(DistanceType.hasOwnProperty(distanceType));
+		assert(DistanceTypeValues.has(distanceType));
 	}
 
 	export function assertIsOrientation(orientation: number): asserts orientation is Orientation {
-		assert(Orientation.hasOwnProperty(orientation));
+		assert(OrientationValues.has(orientation));
 	}
 
 	export function isSortedByStart(arr: readonly {readonly start: number}[]) {
