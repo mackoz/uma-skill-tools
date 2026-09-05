@@ -1,5 +1,6 @@
 import * as fc from 'fast-check';
-import { prop, forAll } from './TestHelpers';
+import { prop } from './VitestProp';
+import { forAll } from './TestHelpers';
 
 import { CourseHelpers } from '../CourseData';
 
@@ -12,6 +13,7 @@ prop('array with strictly increasing elements is sorted', forAll(fc.array(fc.nat
 prop('array with not strictly increasing elements is not sorted', forAll(fc.array(fc.nat(), {minLength: 2}), xs => {
 	xs.sort((a,b) => +(a>b) - +(b>a));
 	const sorted = xs.slice();
+	if (new Set(xs).size < 2) return true;
 	while (xs.every((x,i) => x === sorted[i])) {
 		for (let i = xs.length; --i >= 0;) {
 			const j = Math.floor(Math.random() * (i + 1));

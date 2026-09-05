@@ -3,8 +3,8 @@
 // touch, and call the real RaceSolver.prototype method(s) against it with .call() -- rather than
 // constructing a full RaceSolver (course/horse/skills/builder machinery), which is covered
 // separately by test/race.ts and is overkill for pinning one isolated mechanic. Extracted from
-// test/rushed-escape-roll.ts (DYN-11), test/spot-struggle-duration.ts (DYN-8), and
-// test/spot-struggle-group.ts (DYN-14) while writing the third one made the duplication obvious;
+// test/rushed-escape-roll.test.ts (DYN-11), test/spot-struggle-duration.test.ts (DYN-8), and
+// test/spot-struggle-group.test.ts (DYN-14) while writing the third one made the duplication obvious;
 // see those files for concrete usage of everything below.
 import { RaceSolver } from '../RaceSolver';
 import { Rule30CARng } from '../Random';
@@ -14,7 +14,7 @@ import { Rule30CARng } from '../Random';
 // plain stub object doesn't have those on its prototype chain, so
 // RaceSolver.prototype.<method>.call(stub) throws "not a function" the moment execution reaches
 // the inner call -- not at stub construction, which makes it an easy thing to forget until a
-// test actually exercises that code path (this bit test/spot-struggle-duration.ts's stub when
+// test actually exercises that code path (this bit test/spot-struggle-duration.test.ts's stub when
 // DYN-14 turned updateLeadCompetition() from one method into a dispatcher). attachMethods copies
 // the named real implementations onto the stub so those calls resolve, and centralizes the
 // RaceSolver.prototype lookup instead of repeating `foo: RaceSolver.prototype.foo` per stub.
@@ -64,7 +64,7 @@ export function stepUntilInactive<T>(
 // RNGs) rather than feeding sequential integers directly to a per-sample PRNG -- prando's first
 // draw is correlated with a small integer seed, which biases exactly the kind of single-roll
 // measurement these tests make across many samples. Originally a comment in
-// test/rushed-escape-roll.ts's histogram(); pulled out so a future stochastic mechanics test
+// test/rushed-escape-roll.test.ts's histogram(); pulled out so a future stochastic mechanics test
 // gets correct seeding by using this rather than by copying the comment and hoping to remember why.
 export function seededSubStream(masterSeed: number): () => number {
 	const master = new Rule30CARng(masterSeed);

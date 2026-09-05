@@ -4,7 +4,8 @@
 // exactly 3 escape rolls at 3s/6s/9s (55% each), a forced end at 12s, and no dependence on the
 // timestep used to reach those boundaries. Confirmed against two independent reference engines:
 // mee1080/umasim RaceCalculator.kt:245-263 and alpha123/uma-skill-tools RaceSolver.ts:348-359.
-import test from 'tape';
+import { test } from 'vitest';
+import { ok, strictEqual } from 'node:assert/strict';
 import { RaceSolver, Timer } from '../RaceSolver';
 import { Rule30CARng } from '../Random';
 import { attachMethods, stepUntilInactive, seededSubStream } from './RaceSolverTestHelpers';
@@ -49,10 +50,10 @@ function histogram(dt: number, samples: number, masterSeed: number) {
 	return counts;
 }
 
-test('Rushed escapes at exactly 3 boundaries (3s/6s/9s) plus a forced 12s cap', t => {
+test('Rushed escapes at exactly 3 boundaries (3s/6s/9s) plus a forced 12s cap', () => {
 	const s = makeRushedStub(1);
 	RaceSolver.prototype.updateRushedState.call(s);
-	t.ok(s.isRushed, 'enters rushed state once pos reaches rushedEnterPosition');
+	ok(s.isRushed, 'enters rushed state once pos reaches rushedEnterPosition');
 
 	// Force every escape roll to fail so we walk the full 12s without early exit,
 	// and confirm rushedEscapeRolls never exceeds 3 regardless of how long we keep stepping.
@@ -60,34 +61,31 @@ test('Rushed escapes at exactly 3 boundaries (3s/6s/9s) plus a forced 12s cap', 
 	const dt = 1 / 15;
 	const t_ = stepUntilInactive(s, RaceSolver.prototype.updateRushedState, s => s.rushedTimer, s => s.isRushed, dt, 20);
 
-	t.equal(s.rushedEscapeRolls, 3, 'exactly 3 escape rolls are taken, never more');
-	t.ok(!s.isRushed, 'still force-ends at the 12s cap even when every escape roll fails');
-	t.ok(t_ >= 12 && t_ < 12 + dt, 'forced end lands within one frame of the 12s cap');
-	t.end();
+	strictEqual(s.rushedEscapeRolls, 3, 'exactly 3 escape rolls are taken, never more');
+	ok(!s.isRushed, 'still force-ends at the 12s cap even when every escape roll fails');
+	ok(t_ >= 12 && t_ < 12 + dt, 'forced end lands within one frame of the 12s cap');
 });
 
-test('Rushed escape distribution matches the reference (55%/24.75%/11.14%/9.11% at 3/6/9/12s)', t => {
+test('Rushed escape distribution matches the reference (55%/24.75%/11.14%/9.11% at 3/6/9/12s)', () => {
 	const dt = 1 / 15;
 	const samples = 20000;
 	const counts = histogram(dt, samples, 424242);
 	const pct = (n: number) => (100 * counts[n]) / samples;
 
 	// P(escape at 3s) = 0.55; P(6s) = 0.45*0.55; P(9s) = 0.45^2*0.55; P(12s, forced) = 0.45^3
-	t.ok(Math.abs(pct(3) - 55) < 2, `escape-at-3s ~55% (got ${pct(3).toFixed(2)}%)`);
-	t.ok(Math.abs(pct(6) - 24.75) < 2, `escape-at-6s ~24.75% (got ${pct(6).toFixed(2)}%)`);
-	t.ok(Math.abs(pct(9) - 11.14) < 2, `escape-at-9s ~11.14% (got ${pct(9).toFixed(2)}%)`);
-	t.ok(Math.abs(pct(12) - 9.11) < 2, `forced-end-at-12s ~9.11% (got ${pct(12).toFixed(2)}%)`);
-	t.end();
+	ok(Math.abs(pct(3) - 55) < 2, `escape-at-3s ~55% (got ${pct(3).toFixed(2)}%)`);
+	ok(Math.abs(pct(6) - 24.75) < 2, `escape-at-6s ~24.75% (got ${pct(6).toFixed(2)}%)`);
+	ok(Math.abs(pct(9) - 11.14) < 2, `escape-at-9s ~11.14% (got ${pct(9).toFixed(2)}%)`);
+	ok(Math.abs(pct(12) - 9.11) < 2, `forced-end-at-12s ~9.11% (got ${pct(12).toFixed(2)}%)`);
 });
 
-test('Rushed escape distribution is independent of the integration timestep', t => {
+test('Rushed escape distribution is independent of the integration timestep', () => {
 	const samples = 8000;
 	const at15 = histogram(1 / 15, samples, 111111);
 	const at60 = histogram(1 / 60, samples, 111111);
 	for (const bucket of [3, 6, 9, 12] as const) {
 		const p15 = (100 * at15[bucket]) / samples;
 		const p60 = (100 * at60[bucket]) / samples;
-		t.ok(Math.abs(p15 - p60) < 3, `bucket ${bucket}s: 1/15s=${p15.toFixed(2)}% vs 1/60s=${p60.toFixed(2)}% agree`);
+		ok(Math.abs(p15 - p60) < 3, `bucket ${bucket}s: 1/15s=${p15.toFixed(2)}% vs 1/60s=${p60.toFixed(2)}% agree`);
 	}
-	t.end();
 });

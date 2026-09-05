@@ -1,9 +1,27 @@
 import { program, Option } from 'commander';
 import * as fc from 'fast-check';
-import { prop, forAll } from './TestHelpers';
+import { forAll } from './TestHelpers';
 import * as arb from './arb/Race';
 
+// PIPE-50: unlike the migrated files under test/*.test.ts, this is a standalone CLI harness run
+// directly via `tsx`, never through the vitest runner -- so it can't use TestHelpers.prop(), which
+// now wraps vitest's own `test()` (that call throws when there's no vitest runner to register
+// into). This local prop() keeps the pre-migration TAP-ish console reporting and, critically, the
+// pre-migration behavior of failing the process (nonzero exit) on a property failure, so
+// `npm test`'s `&&`-chained invocation still stops here on a real failure.
+
 import { RaceSolver } from '../RaceSolver';
+
+function prop(msg: string, f: () => void) {
+	try {
+		f();
+		console.log(`ok - ${msg}`);
+	} catch (e) {
+		console.error(`not ok - ${msg}`);
+		console.error(e);
+		process.exitCode = 1;
+	}
+}
 
 program
 	.addOption(new Option('-n, --runs <number>', 'number of runs per property')

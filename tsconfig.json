@@ -8,5 +8,6 @@
 		"skipLibCheck": true,
 		"preserveConstEnums": true,
 		"strict": false
-	}
+	},
+	"exclude": ["node_modules", "vitest.config.mts"]
 }
