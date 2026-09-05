@@ -30,8 +30,10 @@ function effect(valueUsage: number | undefined, modifier = 1): SkillEffect {
 }
 
 // Draws once against a fresh stub, manually seeding skillActivationCounts so the read inside
-// scaleEffectValue() sees exactly `activationCount` -- mirrors how activateSkill() will have
-// already incremented the map by the time scaleEffectValue() reads it for a given activation.
+// scaleEffectValue() sees exactly `activationCount` -- mirrors activateSkill()'s real ordering,
+// where the map isn't bumped until *after* its effects forEach runs (RaceSolver.ts, right after
+// the forEach that calls scaleEffectValue()), so the roll for a given activation always reads
+// the count left over from the *previous* activation, not one already incremented for this one.
 function draw(skillValueSeed: number, skillId: string, effectIdx: number, activationCount: number, perspective: Perspective = Perspective.Self): number {
 	const stub = makeStub(skillValueSeed);
 	stub.skillActivationCounts.set(`${skillId}:${perspective}`, activationCount);
