@@ -359,7 +359,7 @@ function main() {
 	const args = process.argv.slice(2);
 	const dirArg = args.find(a => !a.startsWith('--'));
 	if (!dirArg) {
-		console.error('usage: ts-node corpusReport.ts <corpus-dir> [--reseed N]');
+		console.error('usage: tsx corpusReport.ts <corpus-dir> [--reseed N]');
 		process.exit(1);
 	}
 	const reseedFlagIdx = args.indexOf('--reseed');

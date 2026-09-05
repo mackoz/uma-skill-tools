@@ -13,7 +13,7 @@ npm install
 npm test
 ```
 
-This installs `ts-node` and runs the currently wired tests: `test/parser.ts` (a condition-parser property test) and `test/activation-sampling.ts` (sample-policy bounds and derived-seed isolation). See `CLAUDE.md` and `tools/README.md` for the standalone typecheck and the current status of the older CLI tools.
+This installs `tsx` and runs the currently wired tests: `test/parser.ts` (a condition-parser property test), `test/activation-sampling.ts` (sample-policy bounds and derived-seed isolation), `test/rushed-escape-roll.ts`, `test/spot-struggle-duration.ts`, `test/spot-struggle-group.ts`, `test/activate-counts-as-random.ts`, `test/value-scaling-roll.ts`, `test/race.ts` (property tests over a full `RaceSolverBuilder`-built race), and `test/regression/check.ts` (a checkpoint replay regression test). See `CLAUDE.md` and `tools/README.md` for the standalone typecheck and the current status of the older CLI tools.
 
 Charting features require Python and matplotlib.
 
