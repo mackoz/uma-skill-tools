@@ -73,6 +73,12 @@ export abstract class DistributionRandomPolicy {
 			// remainder at the last region comes out a hair over its length. Saturating into the
 			// last region there matches what this already does when the remainder equals the
 			// region length exactly -- the wrap test is `>`, not `>=`. See SKL-29.
+			// Corollary: this is unconditionally total, so a *large* overshoot (say a future
+			// distribution() returning well past `range`) is absorbed the same way -- as a
+			// zero-length trigger at the last region's end, i.e. a skill that never activates for
+			// that sample -- rather than surfacing. That is the deliberate trade: a sample policy
+			// must not throw. If you are here debugging a skill that mysteriously never fires,
+			// check what distribution() is actually returning before suspecting this loop.
 			// ANCHOR: distribution-random-region-walk
 			for (let j = 0; j < rs.length; j++) {
 				pos += rs[j].start;
