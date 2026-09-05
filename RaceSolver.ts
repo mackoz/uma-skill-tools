@@ -168,6 +168,26 @@ export const enum SkillType {
 	ExtendEvolvedDuration = 42
 }
 
+export const SkillTypeValues: ReadonlySet<number> = new Set([
+	SkillType.Noop,
+	SkillType.SpeedUp,
+	SkillType.StaminaUp,
+	SkillType.PowerUp,
+	SkillType.GutsUp,
+	SkillType.WisdomUp,
+	SkillType.Recovery,
+	SkillType.MultiplyStartDelay,
+	SkillType.SetStartDelay,
+	SkillType.CurrentSpeed,
+	SkillType.CurrentSpeedWithNaturalDeceleration,
+	SkillType.TargetSpeed,
+	SkillType.LaneMovementSpeed,
+	SkillType.Accel,
+	SkillType.ChangeLane,
+	SkillType.ActivateRandomGold,
+	SkillType.ExtendEvolvedDuration
+]);
+
 export const enum SkillRarity { White = 1, Gold, Unique, Evolution = 6 }
 
 export const enum PositionKeepState {

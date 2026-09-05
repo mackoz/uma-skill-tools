@@ -10,6 +10,8 @@ export const enum Aptitude { S, A, B, C, D, E, F, G }
 // ANCHOR: strategy-proficiency-modifier
 export const StrategyProficiencyModifier = Object.freeze([1.1, 1.0, 0.85, 0.75, 0.6, 0.4, 0.2, 0.1]);
 
+const StrategyValues: ReadonlySet<number> = new Set([Strategy.Nige, Strategy.Senkou, Strategy.Sasi, Strategy.Oikomi, Strategy.Oonige]);
+
 export interface HorseParameters {
 	readonly speed: number
 	readonly stamina: number
@@ -27,7 +29,7 @@ export interface HorseParameters {
 
 export namespace StrategyHelpers {
 	export function assertIsStrategy(strategy: number): asserts strategy is Strategy {
-		assert(Strategy.hasOwnProperty(strategy));
+		assert(StrategyValues.has(strategy));
 	}
 
 	// ANCHOR: strategy-matches-oonige-nige

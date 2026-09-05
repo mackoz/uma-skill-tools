@@ -8,7 +8,7 @@ import { PRNG } from '../Random';
 import { ActivationSamplePolicy, ImmediatePolicy } from '../ActivationSamplePolicy';
 import { Conditions } from '../ActivationConditions';
 import { getParser } from '../ConditionParser';
-import { RaceSolver, DynamicCondition, SkillType, SkillRarity, SkillEffect } from '../RaceSolver';
+import { RaceSolver, DynamicCondition, SkillType, SkillTypeValues, SkillRarity, SkillEffect } from '../RaceSolver';
 import { NoopHpPolicy } from '../HpPolicy';
 
 import skills from '../data/jp/skill_data.json';
@@ -77,7 +77,7 @@ function buildSkillEffects(skill) {
 			// type-21 effect in either dataset uses usage 8/9 -- but latent if that changes.
 			acc.push({type: SkillType.CurrentSpeed, baseDuration: skill.baseDuration / 10000, modifier: ef.modifier / 10000, valueUsage: ef.valueUsage});
 			acc.push({type: SkillType.TargetSpeed, baseDuration: skill.baseDuration / 10000, modifier: ef.modifier / 10000, valueUsage: ef.valueUsage});
-		} else if (SkillType.hasOwnProperty(ef.type)) {
+		} else if (SkillTypeValues.has(ef.type)) {
 			acc.push({type: ef.type, baseDuration: skill.baseDuration / 10000, modifier: ef.modifier / 10000, valueUsage: ef.valueUsage});
 		}
 		return acc;
