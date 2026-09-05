@@ -19,23 +19,22 @@ const options = program.opts();
 // A generated RaceParams's presupposed/under-test skills sometimes can't actually be built into a working
 // RaceSolver even though the module-load-time skillids filter in test/arb/Race.ts passed them individually:
 // some skills gate their whole condition behind a course/order-info precondition the filter can't
-// exhaustively probe (see arb.isUnregisteredConditionError's comment -- a known, already-tracked engine gap),
-// and PIPE-46's fuzzing additionally turned up a pre-existing, unrelated ActivationSamplePolicy.ts bug
-// (DistributionRandomPolicy.sample()'s region-wraparound loop indexing past the end of the region list for
-// some region/course/nsamples combinations -- see CLAUDE.md's Known gaps) that's common enough to trip these
-// properties at run counts as low as a few dozen. Both are skill-data/condition-layer failures, not bugs in
-// the race-progression invariants these three properties actually check -- each is asserted via an explicit
-// `return false`, never by expecting `build()`/`.next()` to throw -- so any exception raised while
-// constructing or stepping a generated race is treated as a vacuous case (skip) rather than a failure here.
+// exhaustively probe (see arb.isUnregisteredConditionError's comment -- a known, already-tracked engine gap).
+// That is a skill-data/condition-layer failure, not a bug in the race-progression invariants these three
+// properties actually check -- each is asserted via an explicit `return false`, never by expecting
+// `build()`/`.next()` to throw -- so it is treated as a vacuous case (skip). Every *other* exception is
+// rethrown and fails the property: an unexpected throw out of the engine is a real finding, and swallowing
+// them wholesale is how SKL-29 (DistributionRandomPolicy.sample() indexing past its region list) stayed
+// invisible here until it was hunted down directly.
 // `RaceSolverBuilder.build()` is a generator, so the construction work that can throw doesn't actually run
 // until the first `.next()` call, not at `.build()` itself -- hence wrapping each property's whole body
-// rather than just the `.build()` call. Fixing the underlying engine gaps is out of scope for the harness
-// revival this function exists for; see CLAUDE.md for both as tracked, unfixed findings.
+// rather than just the `.build()` call.
 function skippingUnbuildableScenarios(fn: () => boolean): () => boolean {
 	return () => {
 		try {
 			return fn();
-		} catch (_e) {
+		} catch (e) {
+			if (!arb.isUnregisteredConditionError(e)) throw e;
 			return true;
 		}
 	};

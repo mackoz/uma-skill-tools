@@ -65,12 +65,21 @@ export abstract class DistributionRandomPolicy {
 		const samples = [];
 		for (let i = 0; i < nsamples; ++i) {
 			let pos = randoms[i];
-			for (let j = 0;; j++) {
+			// `pos` carries the offset still to be consumed; adding this region's start and
+			// subtracting its end (when it doesn't fit) leaves the remainder for the next one.
+			// NB. the loop must stay bounded by `rs.length` even though `randoms[i] < range` by
+			// construction: `range` is summed in a different order than this walk re-accumulates
+			// it, so for some region layouts the two float sums disagree by an ulp and the
+			// remainder at the last region comes out a hair over its length. Saturating into the
+			// last region there matches what this already does when the remainder equals the
+			// region length exactly -- the wrap test is `>`, not `>=`. See SKL-29.
+			// ANCHOR: distribution-random-region-walk
+			for (let j = 0; j < rs.length; j++) {
 				pos += rs[j].start;
-				if (pos > rs[j].end) {
+				if (pos > rs[j].end && j < rs.length - 1) {
 					pos -= rs[j].end;
 				} else {
-					samples.push(new Region(pos, rs[j].end));
+					samples.push(new Region(Math.min(pos, rs[j].end), rs[j].end));
 					break;
 				}
 			}
