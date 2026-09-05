@@ -16,7 +16,7 @@ const SECTION_LENGTH = 100; // matches hakuraku's worked example (2400m / 24 sec
 
 // tryStartLeadCompetition()/updateLeadCompetitionExit() only touch a handful of instance fields
 // (see RaceSolver.ts); build a minimal stand-in rather than a full RaceSolver, same spirit as
-// test/rushed-escape-roll.ts and test/spot-struggle-duration.ts.
+// test/rushed-escape-roll.test.ts and test/spot-struggle-duration.test.ts.
 function makeUma(pos: number, strategy: Strategy, opts: {lane?: number, laneMovement?: boolean} = {}) {
 	return attachMethods({
 		leadCompetitionEnabled: true,

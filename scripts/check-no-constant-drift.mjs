@@ -17,6 +17,19 @@
 import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 
+// What a green run proves, and what it does not. This tool is kept and reused, so be precise:
+// it asserts the *multiset* of numeric literals is unchanged -- i.e. no value was added, removed
+// or altered in aggregate. Three things it deliberately does not establish:
+//   1. Literals are extracted from the whole file text, including comments and string messages,
+//      so a number appearing only in an assertion message counts the same as a real bound.
+//   2. Because it compares multisets rather than positions, a *transposition* passes: if bound A
+//      changed 3.75 -> 5.0 while some other site in the same file changed 5.0 -> 3.75, the totals
+//      match and this reports OK. Positional checking was considered and rejected -- it would trip
+//      on any refactor that moves code, making the tool noisy enough to be ignored.
+//   3. The leading `-` is consumed as part of the literal, so `x-5` yields -5 while `x - 5` yields
+//      5. A whitespace-only edit around a subtraction can therefore shift the reported multiset.
+// Treat a green run as "no net numeric change", which is strong evidence for a mechanical rename
+// and not a proof of behavioural equivalence.
 const NUMBER_RE = /-?\d+\.?\d*(?:[eE][+-]?\d+)?/g;
 
 function extractNumbers(text) {

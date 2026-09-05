@@ -9,6 +9,9 @@ import * as arb from './arb/Race';
 // into). This local prop() keeps the pre-migration TAP-ish console reporting and, critically, the
 // pre-migration behavior of failing the process (nonzero exit) on a property failure, so
 // `npm test`'s `&&`-chained invocation still stops here on a real failure.
+
+import { RaceSolver } from '../RaceSolver';
+
 function prop(msg: string, f: () => void) {
 	try {
 		f();
@@ -19,8 +22,6 @@ function prop(msg: string, f: () => void) {
 		process.exitCode = 1;
 	}
 }
-
-import { RaceSolver } from '../RaceSolver';
 
 program
 	.addOption(new Option('-n, --runs <number>', 'number of runs per property')

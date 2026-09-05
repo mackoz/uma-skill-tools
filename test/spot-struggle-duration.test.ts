@@ -10,7 +10,7 @@ import { attachMethods, stepUntilInactive } from './RaceSolverTestHelpers';
 
 // updateLeadCompetition() dispatches straight to updateLeadCompetitionExit() when
 // leadCompetitionStart is non-null, so the entry-detection half (tryStartLeadCompetition(),
-// this.sectionLength) is unreachable here -- same spirit as test/rushed-escape-roll.ts's stub.
+// this.sectionLength) is unreachable here -- same spirit as test/rushed-escape-roll.test.ts's stub.
 // updateLeadCompetitionExit is attached because updateLeadCompetition() calls it as
 // this.updateLeadCompetitionExit(), which a plain stub doesn't have on its prototype chain
 // otherwise. umas is deliberately empty: that method's DYN-14 distance/lateral exit reads

@@ -4,7 +4,7 @@
 // only moves if a second equipped skill fires. conditionsWithActivateCountsAsRandom's
 // is_activate_any_skill: noopImmediate entry models it as unconditionally satisfied instead. This
 // pins that fix directly against the real skill 120011 (Dreams Donned with Pride!, Global's
-// concrete example) and a real course, the same way test/spot-struggle-duration.ts pins its own
+// concrete example) and a real course, the same way test/spot-struggle-duration.test.ts pins its own
 // fix against real data rather than a synthetic case.
 import { test } from 'vitest';
 import { strictEqual, ok } from 'node:assert/strict';

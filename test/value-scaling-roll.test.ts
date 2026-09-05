@@ -9,7 +9,7 @@
 // scaleEffectValue() only reads this.skillValueSeed and this.skillActivationCounts plus the
 // PendingSkill/SkillEffect arguments passed in -- it doesn't call any sibling method on `this` --
 // so the stub carries just those two fields, same minimal-stub spirit as
-// test/rushed-escape-roll.ts's makeRushedStub.
+// test/rushed-escape-roll.test.ts's makeRushedStub.
 import { test } from 'vitest';
 import { strictEqual, ok } from 'node:assert/strict';
 import { RaceSolver, Perspective, SkillType, PendingSkill, SkillEffect } from '../RaceSolver';
