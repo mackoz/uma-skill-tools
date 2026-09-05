@@ -68,10 +68,17 @@ function buildSkillEffects(skill) {
 	// im on a really old version of node and cant use flatMap
 	return skill.effects.reduce((acc,ef) => {
 		if (ef.type == 21) {  // debuffs
-			acc.push({type: SkillType.CurrentSpeed, baseDuration: skill.baseDuration / 10000, modifier: ef.modifier / 10000});
-			acc.push({type: SkillType.TargetSpeed, baseDuration: skill.baseDuration / 10000, modifier: ef.modifier / 10000});
+			// HAZARD: both synthesized effects copy the same valueUsage from the one source
+			// effect, but RaceSolver.ts's scaleEffectValue() keys its "Multiply Random" (8/9)
+			// roll by effectIdx, and these two land at different effectIdx values in the
+			// resulting effects array. If a type-21 effect ever carried valueUsage 8 or 9, the
+			// CurrentSpeed and TargetSpeed halves of this one game effect would draw
+			// *independent* scale factors instead of one shared roll. Unreachable today -- no
+			// type-21 effect in either dataset uses usage 8/9 -- but latent if that changes.
+			acc.push({type: SkillType.CurrentSpeed, baseDuration: skill.baseDuration / 10000, modifier: ef.modifier / 10000, valueUsage: ef.valueUsage});
+			acc.push({type: SkillType.TargetSpeed, baseDuration: skill.baseDuration / 10000, modifier: ef.modifier / 10000, valueUsage: ef.valueUsage});
 		} else if (SkillType.hasOwnProperty(ef.type)) {
-			acc.push({type: ef.type, baseDuration: skill.baseDuration / 10000, modifier: ef.modifier / 10000});
+			acc.push({type: ef.type, baseDuration: skill.baseDuration / 10000, modifier: ef.modifier / 10000, valueUsage: ef.valueUsage});
 		}
 		return acc;
 	}, []);

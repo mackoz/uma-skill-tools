@@ -204,6 +204,7 @@ export interface SkillEffect {
 	type: SkillType
 	baseDuration: number
 	modifier: number
+	valueUsage?: number
 }
 
 export interface PendingSkill {
@@ -247,6 +248,7 @@ export class RaceSolver {
 	downhillRng: PRNG[]
 	sectionSpeedRng: PRNG
 	skillWisdomSeed: number
+	skillValueSeed: number
 	posKeepRng: PRNG
 	laneMovementRng: PRNG
 	specialConditionRng: PRNG
@@ -275,6 +277,11 @@ export class RaceSolver {
 	hillEnd: number[]
 	activateCount: number[]
 	activateCountHeal: number
+	// Keyed by `${skillId}:${perspective}`; counts prior activations of that skill from that
+	// perspective so a repeat activation (e.g. the replay direct-position-pinning path's
+	// double-fire, see README's "Skill cooldowns" caveat) draws an independent value-scaling
+	// roll instead of reusing the first activation's. See scaleEffectValue().
+	skillActivationCounts: Map<string, number>
 	activateCountLastFrame: number
 	activateCountThisFrame: number
 	activateCountLaterHalf: number
@@ -405,12 +412,14 @@ export class RaceSolver {
 		this.pendingSkills = params.skills.slice();  // copy since we remove from it
 		this.pendingRemoval = new Set();
 		this.usedSkills = new Set();
+		this.skillActivationCounts = new Map();
 		this.syncRng = new Rule30CARng(this.rng.int32());
 		this.gorosiRng = new Rule30CARng(this.rng.int32());
 		this.rushedRng = new Rule30CARng(this.rng.int32());
 		const wisdomSeed = this.rng.int32();
 		this.sectionSpeedRng = new Rule30CARng(wisdomSeed);
 		this.skillWisdomSeed = deriveSeed(wisdomSeed, 'skill-wisdom');
+		this.skillValueSeed = deriveSeed(wisdomSeed, 'skill-value');
 		this.posKeepRng = new Rule30CARng(this.rng.int32());
 		this.laneMovementRng = new Rule30CARng(this.rng.int32());
 		this.specialConditionRng = new Rule30CARng(this.rng.int32());
@@ -1564,10 +1573,34 @@ export class RaceSolver {
 	}
 
 
+	// Applies the "Multiply Random" value-scaling roll (ability_value_usage 8 or 9 -- the game's
+	// own docs treat them as identical) to a single effect's modifier, returning a shallow copy so
+	// no `case` branch in activateSkill()'s switch needs to know this happened. Every other
+	// valueUsage (in particular 1, "Direct") passes the effect through completely untouched.
+	//
+	// 60% -> 0.0x, 30% -> 0.02x, 10% -> 0.04x (game-mechanics/skills.md:182-188). The roll is
+	// keyed by (skillValueSeed, skillId, perspective, effectIdx, activationCount) and drawn from a
+	// fresh Rule30CARng via deriveSeed(), the same per-skill-key pattern as checkWisdomForSkill() --
+	// deliberately NOT a shared sequential stream, which would desync every other skill's draw the
+	// moment one horse in an A/B comparison carries an extra skill (see `this.umas` and
+	// checkWisdomForSkill() above).
+	scaleEffectValue(s: PendingSkill, ef0: SkillEffect, effectIdx: number): SkillEffect {
+		if (ef0.valueUsage !== 8 && ef0.valueUsage !== 9) {
+			return ef0;
+		}
+		const perspective = s.perspective ?? Perspective.Self;
+		const activationCount = this.skillActivationCounts.get(`${s.skillId}:${perspective}`) ?? 0;
+		const key = `${s.skillId}:${perspective}:${effectIdx}:${activationCount}`;
+		const roll = new Rule30CARng(deriveSeed(this.skillValueSeed, key)).random();
+		const scale = roll < 0.6 ? 0.0 : roll < 0.9 ? 0.02 : 0.04;
+		return {...ef0, modifier: ef0.modifier * scale};
+	}
+
 	activateSkill(s: PendingSkill) {
 		// sort so that the ExtendEvolvedDuration effect always activates after other effects, since it shouldn't extend the duration of other
 		// effects on the same skill
-		s.effects.sort((a,b) => +(a.type == 42) - +(b.type == 42)).forEach(ef => {
+		s.effects.sort((a,b) => +(a.type == 42) - +(b.type == 42)).forEach((ef0, effectIdx) => {
+			const ef = this.scaleEffectValue(s, ef0, effectIdx);
 			const scaledDuration = ef.baseDuration * (this.course.distance / 1000) *
 				(s.rarity == SkillRarity.Evolution ? this.modifiers.specialSkillDurationScaling : 1);  // TODO should probably be awakened skills
 				                                                                                       // and not just pinks
@@ -1634,6 +1667,13 @@ export class RaceSolver {
 				break;
 			}
 		});
+		// Bump after the fact so every effect within this one activation (all its effectIdx
+		// values, read above by scaleEffectValue()) sees the same activationCount, and only the
+		// *next* activation of this skillId+perspective pair draws independently from this one.
+		{
+			const activationKey = `${s.skillId}:${s.perspective ?? Perspective.Self}`;
+			this.skillActivationCounts.set(activationKey, (this.skillActivationCounts.get(activationKey) ?? 0) + 1);
+		}
 		if (s.perspective == Perspective.Self) ++this.activateCount[this.phase];
 		// counted here (not just in the pendingSkills loop in processSkillActivations) so that
 		// doActivateRandomGold's re-entrant activateSkill() calls are counted too — "you have just
