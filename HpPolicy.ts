@@ -20,8 +20,17 @@ export const NoopHpPolicy: HpPolicy = {
 	tick(_0: RaceState, _1: number) {},
 	hasRemainingHp() { return true; },
 	hpRatioRemaining() { return 1.0; },
-	// Infinity, consistent with this policy's hpRatioRemaining() returning 1.0: HP is not
-	// modeled here, so the uma is never HP-limited and duration scaling reads its top bracket.
+	// Infinity, consistent with this policy's hpRatioRemaining() returning 1.0 and
+	// hasRemainingHp() returning true: HP is not modeled here, so the uma is never HP-limited.
+	//
+	// Note what this means downstream, since it is easy to guess wrong: ValueScaling.ts's
+	// lookup() tests `value < bound` and every duration table's terminal bound is itself
+	// Infinity, so `Infinity < Infinity` is false and the walk falls off the end onto lookup()'s
+	// identity return -- 1.0x, *not* the top bracket. Duration scaling is therefore simply not
+	// applied on any path that doesn't model HP, which is the right outcome for a policy whose
+	// whole contract is "HP is not modeled" -- it just currently arrives there via the strict
+	// comparison rather than by saying so. See
+	// docs/adr/0013-value-scaling-identity-fallthrough.md.
 	hpRemaining() { return Infinity; },
 	recover(_: number) {},
 	getLastSpurtPair(_0: RaceState, maxSpeed: number, _1: number) { return [-1, maxSpeed] as [number, number]; }

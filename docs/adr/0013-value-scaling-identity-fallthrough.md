@@ -100,16 +100,29 @@ HP-limited," and `Infinity` is the only `hpRemaining()` that says the same thing
 uma is HP-exhausted — the opposite of what the other two methods assert — and any finite stand-in
 would be exactly the fabricated-input mistake rejected in the option above.
 
-The consequence is worth stating plainly, because it is not obvious from the call site: **every
-non-`compare` simulation path saturates duration scaling at its top bracket** (`4.0x` for time
-usage 3, `3.0x` for 7). That includes `mackoz/uma-tools`'s Course Chart mode, which builds without
-`mode: 'compare'`. Those paths already do not model stamina drain at all, so a skill's duration
-there was never HP-conditioned in any other respect either; this is consistent with, not additional
-to, the approximation those modes already make. Changing it — teaching non-`compare` paths a real HP
-model, or picking a different sentinel — would alter output for every one of them, so it is
-deliberately out of scope here and belongs in its own ticket rather than as a side effect of this
-one. Any UI that renders a duration for a non-`compare` mode must feed `Infinity` too, or it will
-advertise a duration the simulation never used.
+The downstream consequence is worth stating precisely, because the intuitive guess is wrong.
+`lookup()` tests `value < bound` and every duration table's terminal bound is itself `Infinity`, so
+`Infinity < Infinity` is false, the walk falls off the end, and the call returns `lookup()`'s
+identity `1.0` — **not** the top bracket. So: **every non-`compare` simulation path applies no
+duration scaling at all** (`1.0x`, not `4.0x`/`3.0x`). That includes `mackoz/uma-tools`'s Course
+Chart mode, which builds without `mode: 'compare'`.
+
+That outcome is the right one — a path that models no HP should not scale a duration on remaining
+HP — and it matches the identity-fallthrough posture this whole record is about. It is worth being
+explicit that it is currently *reached* via the strict comparison rather than *expressed*: nothing
+in `lookup()` says "a non-finite input means unscaled", and the comment there previously called the
+trailing `return` unreachable. Both that comment and `NoopHpPolicy.hpRemaining()`'s have been
+corrected to describe the real behaviour. Making the intent explicit (an early `Number.isFinite`
+guard, say) would be behaviour-preserving but touches the hottest shared path in the module, and
+picking a different sentinel or teaching non-`compare` paths a real HP model would not be
+behaviour-preserving at all — it would move output for every one of those paths. Both belong in
+their own ticket, not here.
+
+The rule for consumers is the same either way: **any UI rendering a duration for a non-`compare`
+mode must feed `Infinity` too**, or it will advertise a duration the simulation never used.
+`mackoz/uma-tools`' Course Chart popover did exactly that before SKL-7's second fix round — it
+computed a finite full-HP figure from the chart template's stamina and showed up to `3.5x` where the
+run behind those numbers had used `1.0x`.
 
 ## Consequences
 

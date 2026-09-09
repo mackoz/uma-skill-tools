@@ -38,7 +38,15 @@ function lookup(table: Brackets, value: number): number {
 	for (const [bound, factor] of table) {
 		if (value < bound) return factor;
 	}
-	return 1.0;  // unreachable while every table ends in Infinity; identity if one ever doesn't
+	// Reached for exactly one input: `value === Infinity`, since the comparison is strict and
+	// every table's terminal bound is Infinity. That is not a hypothetical -- NoopHpPolicy's
+	// hpRemaining() returns Infinity, so every non-`compare` simulation path lands here and gets
+	// no duration scaling at all rather than the top bracket. Correct for a path that doesn't
+	// model HP (see HpPolicy.ts's NoopHpPolicy and
+	// docs/adr/0013-value-scaling-identity-fallthrough.md), and it is also the general identity
+	// fallthrough if a table ever ends without an Infinity catch-all. Don't "simplify" the
+	// terminal bracket away on the assumption this line is dead.
+	return 1.0;
 }
 
 // game-mechanics/skills.md -- Value Scaling
