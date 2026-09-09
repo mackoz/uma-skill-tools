@@ -1,7 +1,7 @@
 // SKL-7: the deterministic half of ability_value_usage / ability_time_usage scaling. Every
 // bracket boundary below is quoted from game-mechanics/skills.md's Value Scaling and Duration
 // Scaling tables. The identity assertions matter as much as the arithmetic: an unimplemented
-// code must return exactly 1.0 rather than throw or guess, because ~45 shipped skills carry
+// code must return exactly 1.0 rather than throw or guess, because ~40 shipped skills carry
 // codes this engine deliberately does not model.
 import { test } from 'vitest';
 import { strictEqual, ok } from 'node:assert/strict';

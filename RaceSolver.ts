@@ -430,17 +430,21 @@ export class RaceSolver {
 		// clone since green skills may modify the stat values
 		// ANCHOR: solver-horse-clone
 		this.horse = Object.assign({}, params.horse);
-		// SKL-7: captured now, before the first round of skill activations can raise a stat.
-		// Value usage 13 scales on the uma's own base stats, not on stats a green skill has
-		// already boosted -- reading this.horse at activation time would fold green skills in.
+		// SKL-7: value usage 13 scales on the maximum *raw* stat -- the uma's own base stats,
+		// post-motivation and post-overcap but before any course/ground/strategy modifier, and
+		// before any green skill can raise one. buildBaseStats() computes it (see
+		// HorseParameters.maxRawStat) and buildAdjustedStats() carries it through unchanged, so
+		// reading it off params.horse here is safe even though params.horse is adjusted stats.
 		// ANCHOR: scaling-base-stat-snapshot
-		this.maxBaseStat = Math.max(params.horse.speed, params.horse.stamina, params.horse.power,
-		                            params.horse.guts, params.horse.wisdom);
+		this.maxBaseStat = params.horse.maxRawStat;
 		// Value usage 2 counts the uma's own equipped skills. Derived from the pending list
 		// rather than taken as a constructor parameter, to avoid churning every call site and
 		// test stub; distinct skillIds at Self perspective is the closest available proxy, and
 		// the formula caps at 1.2x from 20 skills up, so a miscount of one or two cannot move
-		// the result for any realistic build.
+		// the result for any realistic build. Note it counts *pending* skills, so a skill whose
+		// activation regions came back empty on this course is not counted here, while the UI's
+		// own context counts every equipped skill -- a bounded discrepancy, since usage 2 moves
+		// the factor by only 0.01 per skill.
 		this.equippedSkillCount = new Set(
 			params.skills
 				.filter(s => (s.perspective ?? Perspective.Self) == Perspective.Self)

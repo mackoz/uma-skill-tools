@@ -175,7 +175,10 @@ export function buildHorseParameters(horseDesc, course: CourseData, mood: Mood, 
 		surfaceAptitude: parseAptitude(horseDesc.surfaceAptitude, 'surface'),
 		strategyAptitude: parseAptitude(horseDesc.strategyAptitude, 'strategy'),
 		rawStamina: horseDesc.stamina * motivCoef,
-		rawWisdom: adjustOvercap(horseDesc.wisdom) * motivCoef
+		rawWisdom: adjustOvercap(horseDesc.wisdom) * motivCoef,
+		// SKL-7: same definition as buildBaseStats() -- max of the five stats post-motivation and
+		// post-overcap, before the course/ground/strategy modifiers applied above.
+		maxRawStat: Math.max(baseStats.speed, baseStats.stamina, baseStats.power, baseStats.guts, baseStats.wisdom)
 	});
 }
 

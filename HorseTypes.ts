@@ -25,6 +25,13 @@ export interface HorseParameters {
 	readonly strategyAptitude: Aptitude
 	readonly rawStamina: number
 	readonly rawWisdom: number
+	// SKL-7: max of the five stats as buildBaseStats() computes them -- post-motivation and
+	// post-adjustOvercap, but before any course/ground/strategy modifier. Value usage 13's
+	// brackets top out at 1100 and card stats cap near 1200, so the table only makes sense
+	// against a raw stat; against adjusted speed (course modifier 1.05-1.20) essentially every
+	// build would pin at the 1.2x ceiling.
+	// ANCHOR: horse-params-max-raw-stat
+	readonly maxRawStat: number
 }
 
 export namespace StrategyHelpers {

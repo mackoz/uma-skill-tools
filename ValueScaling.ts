@@ -9,8 +9,12 @@
 // exactly 1.0, for a stated reason:
 //
 //   value 3-7, 10, 12, 24  training-scenario or account state (Aoharu team stats, Climax races
-//                          won, Grand Live fan count, L'Arc potential). Approximated at the
-//                          documented 1.2x ceiling in tools/make_skill_data.pl instead.
+//                          won, Grand Live fan count, L'Arc potential). Mostly approximated at
+//                          the documented 1.2x ceiling in tools/make_skill_data.pl instead --
+//                          but usage 12 is only partially covered: of its three skills
+//                          (210071, 210072, 210351), only the first two are in that script's
+//                          @scenario_skills, so 210351 gets no approximation at all and its
+//                          stored modifier is the unscaled base value. SKL-32 owns that gap.
 //   value 19, 20, 21, 25   field/blocking/lead state ActivationConditions.ts samples from a
 //   time  2, 4, 5, 6       distribution rather than models, so the input does not exist here.
 //   value 14               needs skill-tag 601-615 data absent from skill_data.json.

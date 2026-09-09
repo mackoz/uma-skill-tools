@@ -67,7 +67,13 @@ sampled statistically; missing skill-tag data; undocumented). The table lives in
   means "we cannot simulate this skill at all" and is worth stopping the whole build over; an
   unmodeled scaling code means "we simulate this skill's magnitude slightly wrong," which is
   strictly better than refusing to simulate a shipped skill at all. The two situations only look
-  alike on the surface.
+  alike on the surface. Note this is not a one-off exception carved out of ADR-0004's posture:
+  ADR-0004's own 2026-08-21 amendment (`docs/adr/0004-fail-loud-unknown-conditions.md:27-29`)
+  already records this engine reconsidering blanket fail-loud in favour of graceful degradation
+  at the *smallest possible unit*, with the gap disclosed rather than crashed on. Identity
+  fallthrough for an unmodeled scaling code is that same direction, applied one unit smaller
+  still — one effect's magnitude, not one alternative or one skill — with `ValueScaling.ts`'s
+  per-group reason table serving as the "explicit report of what was degraded" half.
 - **Keep the approximation in the generator** (extend `patch_modifier()`'s `×1.2` list to cover
   every remaining code, the way it already does for the scenario/account ones). Rejected outright
   for value 2/13/22/23 and duration 3/7 specifically: those four are horse-dependent, and
@@ -79,13 +85,44 @@ sampled statistically; missing skill-tag data; undocumented). The table lives in
   has no ground truth for produces a specific-looking wrong number, worse than the honest identity
   fallthrough — a `1.0x` is visibly "not modeled," a fabricated `1.07x` looks like real output.
 
+### `NoopHpPolicy.hpRemaining()` returns `Infinity`
+
+Duration scaling (`ability_time_usage` 3 and 7) reads `ScalingContext.remainingHp`, which the solver
+fills from `this.hp.hpRemaining()`. `HpPolicy` has two implementations and only one of them models
+HP: `RaceSolverBuilder.ts`'s generator hands out a real `GameHpPolicy` **only** when the builder was
+put in `mode: 'compare'`, and `NoopHpPolicy` otherwise. `NoopHpPolicy` had no `hpRemaining()` before
+this ticket, so one had to be chosen.
+
+`Infinity` was chosen, over `0` or a "typical" finite stand-in, for consistency with the rest of that
+object: `hasRemainingHp()` already returns `true` unconditionally and `hpRatioRemaining()` already
+returns `1.0`. The policy's whole contract is "HP is not modeled here, so the uma is never
+HP-limited," and `Infinity` is the only `hpRemaining()` that says the same thing. `0` would claim the
+uma is HP-exhausted — the opposite of what the other two methods assert — and any finite stand-in
+would be exactly the fabricated-input mistake rejected in the option above.
+
+The consequence is worth stating plainly, because it is not obvious from the call site: **every
+non-`compare` simulation path saturates duration scaling at its top bracket** (`4.0x` for time
+usage 3, `3.0x` for 7). That includes `mackoz/uma-tools`'s Course Chart mode, which builds without
+`mode: 'compare'`. Those paths already do not model stamina drain at all, so a skill's duration
+there was never HP-conditioned in any other respect either; this is consistent with, not additional
+to, the approximation those modes already make. Changing it — teaching non-`compare` paths a real HP
+model, or picking a different sentinel — would alter output for every one of them, so it is
+deliberately out of scope here and belongs in its own ticket rather than as a side effect of this
+one. Any UI that renders a duration for a non-`compare` mode must feed `Infinity` too, or it will
+advertise a duration the simulation never used.
+
 ## Consequences
 
 - The four scenario/account groups (value 3–7, 10, 12, 24) keep their `×1.2` ceiling approximation
   in `tools/make_skill_data.pl`, unchanged by this ticket — defensible because `1.2` is genuinely
   the documented top tier for all four (Aoharu ≥3600 total, Climax ≥25 races, Grand Live's top fan
   bracket per hakuraku's cross-referenced table, L'Arc Lv≥20 — see `game-mechanics/skills.md`),
-  so the approximation is a ceiling, not a guess.
+  so the approximation is a ceiling, not a guess. The coverage is not uniform, though: usage 12 is
+  only *partially* covered. Three skills carry it — `210071`, `210072`, `210351` — and only the
+  first two are listed in `patch_modifier()`'s `@scenario_skills`, so `210351` receives no
+  approximation at all and its stored modifier is the plain unscaled base value. That asymmetry is
+  inherited, not introduced here; whether to add `210351` to the list is deliberately left to its
+  own ticket (SKL-32) rather than settled as a side effect of this one.
 - Adding a newly-computable code later costs one `case` line in `ValueScaling.ts`'s
   `valueScaleFactor()`/`durationScaleFactor()`, plus — only if the code needs an input
   `ScalingContext` doesn't already carry — one new field threaded through from `RaceSolver.ts`.

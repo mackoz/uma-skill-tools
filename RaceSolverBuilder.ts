@@ -180,18 +180,28 @@ function adjustOvercap(stat: number) {
 export function buildBaseStats(horseDesc: HorseDesc, mood: Mood) {
 	const motivCoef = 1 + 0.02 * horseDesc.mood;
 
+	const speed = adjustOvercap(horseDesc.speed) * motivCoef;
+	const stamina = adjustOvercap(horseDesc.stamina) * motivCoef;
+	const power = adjustOvercap(horseDesc.power) * motivCoef;
+	const guts = adjustOvercap(horseDesc.guts) * motivCoef;
+	const wisdom = adjustOvercap(horseDesc.wisdom) * motivCoef;
+
 	return Object.freeze({
-		speed: adjustOvercap(horseDesc.speed) * motivCoef,
-		stamina: adjustOvercap(horseDesc.stamina) * motivCoef,
-		power: adjustOvercap(horseDesc.power) * motivCoef,
-		guts: adjustOvercap(horseDesc.guts) * motivCoef,
-		wisdom: adjustOvercap(horseDesc.wisdom) * motivCoef,
+		speed,
+		stamina,
+		power,
+		guts,
+		wisdom,
 		strategy: parseStrategy(horseDesc.strategy),
 		distanceAptitude: parseAptitude(horseDesc.distanceAptitude, 'distance'),
 		surfaceAptitude: parseAptitude(horseDesc.surfaceAptitude, 'surface'),
 		strategyAptitude: parseAptitude(horseDesc.strategyAptitude, 'strategy'),
 		rawStamina: horseDesc.stamina * motivCoef,
-		rawWisdom: adjustOvercap(horseDesc.wisdom) * motivCoef
+		rawWisdom: adjustOvercap(horseDesc.wisdom) * motivCoef,
+		// SKL-7: value usage 13 scales on the maximum *raw* stat (game-mechanics/skills.md),
+		// so this is taken here -- post-motivation, post-overcap, pre-course-modifier.
+		// ANCHOR: base-stats-max-raw-stat
+		maxRawStat: Math.max(speed, stamina, power, guts, wisdom)
 	});
 }
 
@@ -210,7 +220,8 @@ export function buildAdjustedStats(baseStats: HorseParameters, course: CourseDat
 		surfaceAptitude: baseStats.surfaceAptitude,
 		strategyAptitude: baseStats.strategyAptitude,
 		rawStamina: baseStats.rawStamina,
-		rawWisdom: baseStats.rawWisdom
+		rawWisdom: baseStats.rawWisdom,
+		maxRawStat: baseStats.maxRawStat
 	});
 }
 
