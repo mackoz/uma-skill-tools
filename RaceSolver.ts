@@ -1633,10 +1633,10 @@ export class RaceSolver {
 		};
 	}
 
-	scaleEffectValue(s: PendingSkill, ef0: SkillEffect, effectIdx: number): SkillEffect {
+	scaleEffectValue(s: PendingSkill, ef0: SkillEffect, effectIdx: number, ctx: ScalingContext): SkillEffect {
 		if (ef0.valueUsage !== 8 && ef0.valueUsage !== 9) {
 			// SKL-7: every deterministic code goes through the shared table.
-			const factor = valueScaleFactor(ef0.valueUsage, this.scalingContext());
+			const factor = valueScaleFactor(ef0.valueUsage, ctx);
 			return factor === 1.0 ? ef0 : {...ef0, modifier: ef0.modifier * factor};
 		}
 		const perspective = s.perspective ?? Perspective.Self;
@@ -1651,8 +1651,13 @@ export class RaceSolver {
 		// sort so that the ExtendEvolvedDuration effect always activates after other effects, since it shouldn't extend the duration of other
 		// effects on the same skill
 		s.effects.sort((a,b) => +(a.type == 42) - +(b.type == 42)).forEach((ef0, effectIdx) => {
-			const ef = this.scaleEffectValue(s, ef0, effectIdx);
-			const scaledDuration = ef.baseDuration * durationScaleFactor(ef.timeUsage, this.scalingContext()) *
+			// One context per effect, deliberately inside the forEach rather than hoisted out of it:
+			// the switch below mutates this.horse, so a later effect in the same activation is meant to
+			// see the updated stats. What must not vary is the value factor and the duration factor for
+			// the *same* effect -- hence one context threaded through both.
+			const ctx = this.scalingContext();
+			const ef = this.scaleEffectValue(s, ef0, effectIdx, ctx);
+			const scaledDuration = ef.baseDuration * durationScaleFactor(ef.timeUsage, ctx) *
 				(this.course.distance / 1000) *
 				(s.rarity == SkillRarity.Evolution ? this.modifiers.specialSkillDurationScaling : 1);  // TODO should probably be awakened skills
 				                                                                                       // and not just pinks

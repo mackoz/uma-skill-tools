@@ -13,23 +13,22 @@
 import { test } from 'vitest';
 import { strictEqual, ok } from 'node:assert/strict';
 import { RaceSolver, Perspective, SkillType, PendingSkill, SkillEffect } from '../RaceSolver';
+import { ScalingContext } from '../ValueScaling';
 import { attachMethods, seededSubStream } from './RaceSolverTestHelpers';
 
-// SKL-7: scaleEffectValue()'s early-return (non-8/9) path now unconditionally calls
-// this.scalingContext() to look up deterministic codes, so the stub needs those fields too --
-// their values don't matter for the valueUsage-8 tests below (that path never reaches
-// scalingContext()) nor for the two pass-through tests (valueUsage 1/undefined always resolve to
-// the identity factor regardless of context).
 function makeStub(skillValueSeed: number) {
 	return attachMethods({
 		skillValueSeed,
 		skillActivationCounts: new Map<string, number>(),
-		equippedSkillCount: 0,
-		maxBaseStat: 0,
-		horse: {speed: 0},
-		hp: {hpRemaining: () => 0},
-	}, 'scaleEffectValue', 'scalingContext');
+	}, 'scaleEffectValue');
 }
+
+// SKL-7 (R9): scaleEffectValue() now takes its ScalingContext as a required 4th parameter
+// instead of building one via a sibling this.scalingContext() call. Every draw below goes
+// through the 8/9 "Multiply Random" branch, which never reads ctx at all; the two pass-through
+// tests further down (valueUsage 1/undefined) resolve to the identity factor regardless of ctx
+// too. A trivial, all-zero context is correct for every call site in this file.
+const noopCtx: ScalingContext = {skillCount: 0, maxBaseStat: 0, finalSpeed: 0, remainingHp: 0};
 
 function pendingSkill(skillId: string, perspective: Perspective = Perspective.Self): PendingSkill {
 	return {skillId, perspective} as PendingSkill;
@@ -47,7 +46,7 @@ function effect(valueUsage: number | undefined, modifier = 1): SkillEffect {
 function draw(skillValueSeed: number, skillId: string, effectIdx: number, activationCount: number, perspective: Perspective = Perspective.Self): number {
 	const stub = makeStub(skillValueSeed);
 	stub.skillActivationCounts.set(`${skillId}:${perspective}`, activationCount);
-	return stub.scaleEffectValue(pendingSkill(skillId, perspective), effect(8), effectIdx).modifier;
+	return stub.scaleEffectValue(pendingSkill(skillId, perspective), effect(8), effectIdx, noopCtx).modifier;
 }
 
 // Buckets a scale factor into one of the 3 possible outcomes, tolerant of float representation
@@ -88,7 +87,7 @@ test('draw-order independence: an interleaved draw for a different skill does no
 	const stub = makeStub(777);
 	const drawOn = (skillId: string, effectIdx: number, activationCount: number) => {
 		stub.skillActivationCounts.set(`${skillId}:${Perspective.Self}`, activationCount);
-		return stub.scaleEffectValue(pendingSkill(skillId), effect(8), effectIdx).modifier;
+		return stub.scaleEffectValue(pendingSkill(skillId), effect(8), effectIdx, noopCtx).modifier;
 	};
 
 	const a1 = drawOn('skillA', 0, 0);
@@ -138,12 +137,12 @@ test('independence: effectIdx and activationCount streams are not correlated wit
 
 test('pass-through: valueUsage 1 ("Direct") leaves the modifier untouched', () => {
 	const stub = makeStub(1);
-	const out = stub.scaleEffectValue(pendingSkill('skill'), effect(1, 5), 0);
+	const out = stub.scaleEffectValue(pendingSkill('skill'), effect(1, 5), 0, noopCtx);
 	strictEqual(out.modifier, 5, 'modifier is unchanged when valueUsage is 1');
 });
 
 test('pass-through: valueUsage undefined leaves the modifier untouched', () => {
 	const stub = makeStub(1);
-	const out = stub.scaleEffectValue(pendingSkill('skill'), effect(undefined, 5), 0);
+	const out = stub.scaleEffectValue(pendingSkill('skill'), effect(undefined, 5), 0, noopCtx);
 	strictEqual(out.modifier, 5, 'modifier is unchanged when valueUsage is undefined');
 });

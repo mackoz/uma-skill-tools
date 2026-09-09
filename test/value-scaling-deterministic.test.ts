@@ -83,28 +83,25 @@ test('every unimplemented or absent code is exactly identity', () => {
 	}
 });
 
-// scaleEffectValue() reads only skillValueSeed, skillActivationCounts and the fields
-// scalingContext() touches, so the stub carries exactly those -- same minimal-stub spirit as
-// test/value-scaling-roll.test.ts.
-function makeScalingStub(over: Partial<ScalingContext> = {}) {
+// scaleEffectValue() takes its ScalingContext as a parameter now (R9: threaded through from
+// activateSkill() so the value and duration factors for one effect always read the same
+// instant), so it no longer calls any sibling method on `this` for the non-8/9 path -- the stub
+// carries only what the 8/9 "Multiply Random" branch still reads directly off `this`.
+function makeScalingStub() {
 	return attachMethods({
 		skillValueSeed: 1,
 		skillActivationCounts: new Map<string, number>(),
-		equippedSkillCount: over.skillCount ?? 0,
-		maxBaseStat: over.maxBaseStat ?? 0,
-		horse: {speed: over.finalSpeed ?? 0},
-		hp: {hpRemaining: () => over.remainingHp ?? 0}
-	}, 'scaleEffectValue', 'scalingContext');
+	}, 'scaleEffectValue');
 }
 
 test('scaleEffectValue applies a deterministic factor and returns ef0 itself at identity', () => {
-	const stub = makeScalingStub({maxBaseStat: 500});  // usage 13 -> 0.8x
+	const stub = makeScalingStub();
 	const ef: SkillEffect = {type: SkillType.TargetSpeed, baseDuration: 0, modifier: 100, valueUsage: 13};
-	const scaled = stub.scaleEffectValue({skillId: 'x', perspective: Perspective.Self} as PendingSkill, ef, 0);
+	const scaled = stub.scaleEffectValue({skillId: 'x', perspective: Perspective.Self} as PendingSkill, ef, 0, ctx({maxBaseStat: 500}));  // usage 13 -> 0.8x
 	close(scaled.modifier, 80);
 
 	// Identity must return the *same object*, not a copy -- HP-6's contract, relied on by the
 	// dispatch site in activateSkill().
 	const direct: SkillEffect = {type: SkillType.TargetSpeed, baseDuration: 0, modifier: 100, valueUsage: 1};
-	strictEqual(stub.scaleEffectValue({skillId: 'x'} as PendingSkill, direct, 0), direct);
+	strictEqual(stub.scaleEffectValue({skillId: 'x'} as PendingSkill, direct, 0, ctx()), direct);
 });
