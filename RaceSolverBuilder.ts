@@ -253,7 +253,8 @@ function buildSkillEffects(skill, perspective: Perspective) {
 		// ANCHOR: base-duration-scaling
 		baseDuration: skill.baseDuration / 10000,
 		modifier: ef.modifier / 10000,
-		valueUsage: ef.valueUsage
+		valueUsage: ef.valueUsage,
+		timeUsage: skill.timeUsage
 	}));
 }
 

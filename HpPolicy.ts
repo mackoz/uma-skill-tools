@@ -10,6 +10,7 @@ export interface HpPolicy {
 	tick(state: RaceState, dt: number): void
 	hasRemainingHp(): boolean
 	hpRatioRemaining(): number  // separate methods as the former can be much cheaper to check
+	hpRemaining(): number  // absolute, not a ratio -- SKL-7's time usage 3/7 brackets are absolute
 	recover(modifier: number): void
 	getLastSpurtPair(state: RaceState, maxSpeed: number, baseTargetSpeed2: number): [number, number]
 }
@@ -19,11 +20,14 @@ export const NoopHpPolicy: HpPolicy = {
 	tick(_0: RaceState, _1: number) {},
 	hasRemainingHp() { return true; },
 	hpRatioRemaining() { return 1.0; },
+	// Infinity, consistent with this policy's hpRatioRemaining() returning 1.0: HP is not
+	// modeled here, so the uma is never HP-limited and duration scaling reads its top bracket.
+	hpRemaining() { return Infinity; },
 	recover(_: number) {},
 	getLastSpurtPair(_0: RaceState, maxSpeed: number, _1: number) { return [-1, maxSpeed] as [number, number]; }
 }
 
-const HpStrategyCoefficient = Object.freeze([0, 0.95, 0.89, 1.0, 0.995, 0.86]);
+export const HpStrategyCoefficient = Object.freeze([0, 0.95, 0.89, 1.0, 0.995, 0.86]);
 const HpConsumptionGroundModifier = Object.freeze([
 	[],
 	[0, 1.0, 1.0, 1.02, 1.02],
@@ -107,6 +111,8 @@ export class GameHpPolicy {
 	hpRatioRemaining() {
 		return Math.max(0.0, this.hp / this.maxHp);
 	}
+
+	hpRemaining() { return Math.max(0.0, this.hp); }
 
 	recover(modifier: number) {
 		this.hp = Math.min(this.maxHp, this.hp + this.maxHp * modifier);

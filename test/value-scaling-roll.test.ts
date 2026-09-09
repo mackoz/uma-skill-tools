@@ -15,11 +15,20 @@ import { strictEqual, ok } from 'node:assert/strict';
 import { RaceSolver, Perspective, SkillType, PendingSkill, SkillEffect } from '../RaceSolver';
 import { attachMethods, seededSubStream } from './RaceSolverTestHelpers';
 
+// SKL-7: scaleEffectValue()'s early-return (non-8/9) path now unconditionally calls
+// this.scalingContext() to look up deterministic codes, so the stub needs those fields too --
+// their values don't matter for the valueUsage-8 tests below (that path never reaches
+// scalingContext()) nor for the two pass-through tests (valueUsage 1/undefined always resolve to
+// the identity factor regardless of context).
 function makeStub(skillValueSeed: number) {
 	return attachMethods({
 		skillValueSeed,
 		skillActivationCounts: new Map<string, number>(),
-	}, 'scaleEffectValue');
+		equippedSkillCount: 0,
+		maxBaseStat: 0,
+		horse: {speed: 0},
+		hp: {hpRemaining: () => 0},
+	}, 'scaleEffectValue', 'scalingContext');
 }
 
 function pendingSkill(skillId: string, perspective: Perspective = Perspective.Self): PendingSkill {

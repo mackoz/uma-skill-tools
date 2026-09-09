@@ -6,6 +6,8 @@
 import { test } from 'vitest';
 import { strictEqual, ok } from 'node:assert/strict';
 import { valueScaleFactor, durationScaleFactor, ScalingContext } from '../ValueScaling';
+import { RaceSolver, Perspective, SkillType, PendingSkill, SkillEffect } from '../RaceSolver';
+import { attachMethods } from './RaceSolverTestHelpers';
 
 function ctx(over: Partial<ScalingContext> = {}): ScalingContext {
 	return {skillCount: 0, maxBaseStat: 0, finalSpeed: 0, remainingHp: 0, ...over};
@@ -79,4 +81,30 @@ test('every unimplemented or absent code is exactly identity', () => {
 	for (const u of [1, 2, 4, 5, 6, 8, undefined]) {
 		strictEqual(durationScaleFactor(u, c), 1.0, `durationScaleFactor(${u})`);
 	}
+});
+
+// scaleEffectValue() reads only skillValueSeed, skillActivationCounts and the fields
+// scalingContext() touches, so the stub carries exactly those -- same minimal-stub spirit as
+// test/value-scaling-roll.test.ts.
+function makeScalingStub(over: Partial<ScalingContext> = {}) {
+	return attachMethods({
+		skillValueSeed: 1,
+		skillActivationCounts: new Map<string, number>(),
+		equippedSkillCount: over.skillCount ?? 0,
+		maxBaseStat: over.maxBaseStat ?? 0,
+		horse: {speed: over.finalSpeed ?? 0},
+		hp: {hpRemaining: () => over.remainingHp ?? 0}
+	}, 'scaleEffectValue', 'scalingContext');
+}
+
+test('scaleEffectValue applies a deterministic factor and returns ef0 itself at identity', () => {
+	const stub = makeScalingStub({maxBaseStat: 500});  // usage 13 -> 0.8x
+	const ef: SkillEffect = {type: SkillType.TargetSpeed, baseDuration: 0, modifier: 100, valueUsage: 13};
+	const scaled = stub.scaleEffectValue({skillId: 'x', perspective: Perspective.Self} as PendingSkill, ef, 0);
+	close(scaled.modifier, 80);
+
+	// Identity must return the *same object*, not a copy -- HP-6's contract, relied on by the
+	// dispatch site in activateSkill().
+	const direct: SkillEffect = {type: SkillType.TargetSpeed, baseDuration: 0, modifier: 100, valueUsage: 1};
+	strictEqual(stub.scaleEffectValue({skillId: 'x'} as PendingSkill, direct, 0), direct);
 });

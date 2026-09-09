@@ -7,6 +7,7 @@ import { deriveSeed, PRNG, Rule30CARng } from './Random';
 import type { HpPolicy } from './HpPolicy';
 import { ApproximateCondition } from './ApproximateConditions';
 import { createBlockedSideCondition, createOvertakeCondition } from './SpecialConditions';
+import { ScalingContext, valueScaleFactor, durationScaleFactor } from './ValueScaling';
 
 // ANCHOR: cc-global-declare-fallback
 declare var CC_GLOBAL: boolean
@@ -225,6 +226,7 @@ export interface SkillEffect {
 	baseDuration: number
 	modifier: number
 	valueUsage?: number
+	timeUsage?: number
 }
 
 export interface PendingSkill {
@@ -269,6 +271,8 @@ export class RaceSolver {
 	sectionSpeedRng: PRNG
 	skillWisdomSeed: number
 	skillValueSeed: number
+	readonly maxBaseStat: number
+	readonly equippedSkillCount: number
 	posKeepRng: PRNG
 	laneMovementRng: PRNG
 	specialConditionRng: PRNG
@@ -426,6 +430,22 @@ export class RaceSolver {
 		// clone since green skills may modify the stat values
 		// ANCHOR: solver-horse-clone
 		this.horse = Object.assign({}, params.horse);
+		// SKL-7: captured now, before the first round of skill activations can raise a stat.
+		// Value usage 13 scales on the uma's own base stats, not on stats a green skill has
+		// already boosted -- reading this.horse at activation time would fold green skills in.
+		// ANCHOR: scaling-base-stat-snapshot
+		this.maxBaseStat = Math.max(params.horse.speed, params.horse.stamina, params.horse.power,
+		                            params.horse.guts, params.horse.wisdom);
+		// Value usage 2 counts the uma's own equipped skills. Derived from the pending list
+		// rather than taken as a constructor parameter, to avoid churning every call site and
+		// test stub; distinct skillIds at Self perspective is the closest available proxy, and
+		// the formula caps at 1.2x from 20 skills up, so a miscount of one or two cannot move
+		// the result for any realistic build.
+		this.equippedSkillCount = new Set(
+			params.skills
+				.filter(s => (s.perspective ?? Perspective.Self) == Perspective.Self)
+				.map(s => s.skillId)
+		).size;
 		this.course = params.course;
 		this.hp = params.hp;
 		this.rng = params.rng;
@@ -1604,9 +1624,20 @@ export class RaceSolver {
 	// deliberately NOT a shared sequential stream, which would desync every other skill's draw the
 	// moment one horse in an A/B comparison carries an extra skill (see `this.umas` and
 	// checkWisdomForSkill() above).
+	scalingContext(): ScalingContext {
+		return {
+			skillCount: this.equippedSkillCount,
+			maxBaseStat: this.maxBaseStat,
+			finalSpeed: this.horse.speed,
+			remainingHp: this.hp.hpRemaining()
+		};
+	}
+
 	scaleEffectValue(s: PendingSkill, ef0: SkillEffect, effectIdx: number): SkillEffect {
 		if (ef0.valueUsage !== 8 && ef0.valueUsage !== 9) {
-			return ef0;
+			// SKL-7: every deterministic code goes through the shared table.
+			const factor = valueScaleFactor(ef0.valueUsage, this.scalingContext());
+			return factor === 1.0 ? ef0 : {...ef0, modifier: ef0.modifier * factor};
 		}
 		const perspective = s.perspective ?? Perspective.Self;
 		const activationCount = this.skillActivationCounts.get(`${s.skillId}:${perspective}`) ?? 0;
@@ -1621,7 +1652,8 @@ export class RaceSolver {
 		// effects on the same skill
 		s.effects.sort((a,b) => +(a.type == 42) - +(b.type == 42)).forEach((ef0, effectIdx) => {
 			const ef = this.scaleEffectValue(s, ef0, effectIdx);
-			const scaledDuration = ef.baseDuration * (this.course.distance / 1000) *
+			const scaledDuration = ef.baseDuration * durationScaleFactor(ef.timeUsage, this.scalingContext()) *
+				(this.course.distance / 1000) *
 				(s.rarity == SkillRarity.Evolution ? this.modifiers.specialSkillDurationScaling : 1);  // TODO should probably be awakened skills
 				                                                                                       // and not just pinks
 			switch (ef.type) {

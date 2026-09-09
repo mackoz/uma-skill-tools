@@ -75,10 +75,10 @@ function buildSkillEffects(skill) {
 			// CurrentSpeed and TargetSpeed halves of this one game effect would draw
 			// *independent* scale factors instead of one shared roll. Unreachable today -- no
 			// type-21 effect in either dataset uses usage 8/9 -- but latent if that changes.
-			acc.push({type: SkillType.CurrentSpeed, baseDuration: skill.baseDuration / 10000, modifier: ef.modifier / 10000, valueUsage: ef.valueUsage});
-			acc.push({type: SkillType.TargetSpeed, baseDuration: skill.baseDuration / 10000, modifier: ef.modifier / 10000, valueUsage: ef.valueUsage});
+			acc.push({type: SkillType.CurrentSpeed, baseDuration: skill.baseDuration / 10000, modifier: ef.modifier / 10000, valueUsage: ef.valueUsage, timeUsage: skill.timeUsage});
+			acc.push({type: SkillType.TargetSpeed, baseDuration: skill.baseDuration / 10000, modifier: ef.modifier / 10000, valueUsage: ef.valueUsage, timeUsage: skill.timeUsage});
 		} else if (SkillTypeValues.has(ef.type)) {
-			acc.push({type: ef.type, baseDuration: skill.baseDuration / 10000, modifier: ef.modifier / 10000, valueUsage: ef.valueUsage});
+			acc.push({type: ef.type, baseDuration: skill.baseDuration / 10000, modifier: ef.modifier / 10000, valueUsage: ef.valueUsage, timeUsage: skill.timeUsage});
 		}
 		return acc;
 	}, []);
