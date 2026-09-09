@@ -22,10 +22,29 @@ type OpNode = {type: AstNodeType.Op, op: '&' | '@', left: AstNode, right: AstNod
 type CmpNode = {type: AstNodeType.Cmp, cmp: '==' | '!=' | '>' | '<' | '>=' | '<=', cond: keyof typeof Conditions, value: number};
 type AstNode = OpNode | CmpNode;
 
+// Both AndOperator and OrOperator reconcile their operands' sample policies when constructed, and a couple of pairs are
+// deliberately irreconcilable and throw instead (StraightRandomPolicy with AllCornerRandomPolicy — see ActivationSamplePolicy.ts).
+// Real skill conditions never combine those, and this property is about the parser's syntactic round-trip rather than sample-policy
+// semantics, so skip such trees rather than generate them. Mirrors how the operators themselves fold policies up the tree.
+function reconciledPolicy(node: AstNode) {
+	if (node.type == AstNodeType.Cmp) {
+		return Conditions[node.cond].samplePolicy;
+	}
+	const left = reconciledPolicy(node.left);
+	if (left == null) return null;
+	const right = reconciledPolicy(node.right);
+	if (right == null) return null;
+	try {
+		return left.reconcile(right);
+	} catch (_) {
+		return null;
+	}
+}
+
 // There are no parenthesis in the condition grammar (or any other way of grouping operations) and all operators are left-associative,
 // so & is constrained to have either & or a comparison on its LHS and a comparison on its RHS. @ must have an @, &, or comparison LHS
 // and & or comparison RHS.
-const conditionTree = fc.letrec(tie => ({
+const conditionTree = (fc.letrec(tie => ({
 	node: fc.oneof({depthSize: 'small', withCrossShrink: true}, tie('cmp'), tie('and'), tie('or')),
 	and: fc.record({
 		type: fc.constant(AstNodeType.Op),
@@ -45,7 +64,7 @@ const conditionTree = fc.letrec(tie => ({
 		cond: pick(Object.keys(Conditions)),
 		value: fc.nat()
 	})
-})).node as fc.Arbitrary<AstNode>;
+})).node as fc.Arbitrary<AstNode>).filter(ast => reconciledPolicy(ast) != null);
 
 function stringify(node: AstNode) {
 	if (node.type == AstNodeType.Op) {
