@@ -19,13 +19,16 @@ $db->{RaiseError} = 1;
 
 sub patch_modifier {
 	my ($id, $value) = @_;
+	# Scenario/account state a race simulator structurally cannot model -- approximated at the
+	# documented 1.2x ceiling, which is genuinely the top tier for every code listed here.
+	# SKL-7 removed 210081/210082 (ability_value_usage 13, max base stat) and 210261-210282
+	# (usage 2, skill count) from this list: RaceSolver now computes those from race state, so
+	# scaling them here too would double-count.
 	my @scenario_skills = (
-		210011, 210012, 210021, 210022, 210031, 210032, 210041, 210042, 210051, 210052,  # Aoharu
-		210061, 210062,  # Make A New Track
-		210071, 210072,  # Grand Live
-		210081, 210082,  # updated URA
-		210261, 210262, 210271, 210272, 210281, 210282,  # Grand Masters
-		210291  # RFTS (white version of RFTS scenario skill doesn't have scaling for some reason)
+		210011, 210012, 210021, 210022, 210031, 210032, 210041, 210042, 210051, 210052,  # Aoharu (usage 3-7)
+		210061, 210062,  # Make A New Track (usage 10, races won during training)
+		210071, 210072,  # Grand Live (usage 12 -- fan count, per hakuraku's FAN_COUNT_SCALING_SKILLS)
+		210291  # RFTS (usage 24, L'Arc global potential)
 	);
 	if (grep(/^$id$/, @scenario_skills)) {
 		return $value * 1.2;
@@ -37,13 +40,13 @@ sub patch_modifier {
 my $select = $db->prepare(<<SQL
 SELECT id, rarity,
        precondition_1, condition_1,
-       float_ability_time_1,
+       float_ability_time_1, ability_time_usage_1,
        ability_type_1_1, float_ability_value_1_1, target_type_1_1, ability_value_usage_1_1,
        ability_type_1_2, float_ability_value_1_2, target_type_1_2, ability_value_usage_1_2,
        ability_type_1_3, float_ability_value_1_3, target_type_1_3, ability_value_usage_1_3,
 
        precondition_2, condition_2,
-       float_ability_time_2,
+       float_ability_time_2, ability_time_usage_2,
        ability_type_2_1, float_ability_value_2_1, target_type_2_1, ability_value_usage_2_1,
        ability_type_2_2, float_ability_value_2_2, target_type_2_2, ability_value_usage_2_2,
        ability_type_2_3, float_ability_value_2_3, target_type_2_3, ability_value_usage_2_3
@@ -57,13 +60,13 @@ $select->execute;
 my (
 	$id, $rarity,
 	$precondition_1, $condition_1,
-	$float_ability_time_1,
+	$float_ability_time_1, $ability_time_usage_1,
 	$ability_type_1_1, $float_ability_value_1_1, $target_type_1_1, $ability_value_usage_1_1,
 	$ability_type_1_2, $float_ability_value_1_2, $target_type_1_2, $ability_value_usage_1_2,
 	$ability_type_1_3, $float_ability_value_1_3, $target_type_1_3, $ability_value_usage_1_3,
 
 	$precondition_2, $condition_2,
-	$float_ability_time_2,
+	$float_ability_time_2, $ability_time_usage_2,
 	$ability_type_2_1, $float_ability_value_2_1, $target_type_2_1, $ability_value_usage_2_1,
 	$ability_type_2_2, $float_ability_value_2_2, $target_type_2_2, $ability_value_usage_2_2,
 	$ability_type_2_3, $float_ability_value_2_3, $target_type_2_3, $ability_value_usage_2_3
@@ -72,13 +75,13 @@ my (
 $select->bind_columns(\(
 	$id, $rarity,
 	$precondition_1, $condition_1,
-	$float_ability_time_1,
+	$float_ability_time_1, $ability_time_usage_1,
 	$ability_type_1_1, $float_ability_value_1_1, $target_type_1_1, $ability_value_usage_1_1,
 	$ability_type_1_2, $float_ability_value_1_2, $target_type_1_2, $ability_value_usage_1_2,
 	$ability_type_1_3, $float_ability_value_1_3, $target_type_1_3, $ability_value_usage_1_3,
 
 	$precondition_2, $condition_2,
-	$float_ability_time_2,
+	$float_ability_time_2, $ability_time_usage_2,
 	$ability_type_2_1, $float_ability_value_2_1, $target_type_2_1, $ability_value_usage_2_1,
 	$ability_type_2_2, $float_ability_value_2_2, $target_type_2_2, $ability_value_usage_2_2,
 	$ability_type_2_3, $float_ability_value_2_3, $target_type_2_3, $ability_value_usage_2_3
@@ -97,6 +100,7 @@ while ($select->fetch) {
 		precondition => $precondition_1,
 		condition => $condition_1,
 		baseDuration => $float_ability_time_1,
+		timeUsage => $ability_time_usage_1,
 		effects => \@effects_1
 	});
 	if ($condition_2 ne '' && $condition_2 ne '0') {
@@ -111,6 +115,7 @@ while ($select->fetch) {
 			precondition => $precondition_2,
 			condition => $condition_2,
 			baseDuration => $float_ability_time_2,
+			timeUsage => $ability_time_usage_2,
 			effects => \@effects_2
 		};
 	}

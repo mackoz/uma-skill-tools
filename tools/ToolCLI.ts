@@ -75,10 +75,10 @@ function buildSkillEffects(skill) {
 			// CurrentSpeed and TargetSpeed halves of this one game effect would draw
 			// *independent* scale factors instead of one shared roll. Unreachable today -- no
 			// type-21 effect in either dataset uses usage 8/9 -- but latent if that changes.
-			acc.push({type: SkillType.CurrentSpeed, baseDuration: skill.baseDuration / 10000, modifier: ef.modifier / 10000, valueUsage: ef.valueUsage});
-			acc.push({type: SkillType.TargetSpeed, baseDuration: skill.baseDuration / 10000, modifier: ef.modifier / 10000, valueUsage: ef.valueUsage});
+			acc.push({type: SkillType.CurrentSpeed, baseDuration: skill.baseDuration / 10000, modifier: ef.modifier / 10000, valueUsage: ef.valueUsage, timeUsage: skill.timeUsage});
+			acc.push({type: SkillType.TargetSpeed, baseDuration: skill.baseDuration / 10000, modifier: ef.modifier / 10000, valueUsage: ef.valueUsage, timeUsage: skill.timeUsage});
 		} else if (SkillTypeValues.has(ef.type)) {
-			acc.push({type: ef.type, baseDuration: skill.baseDuration / 10000, modifier: ef.modifier / 10000, valueUsage: ef.valueUsage});
+			acc.push({type: ef.type, baseDuration: skill.baseDuration / 10000, modifier: ef.modifier / 10000, valueUsage: ef.valueUsage, timeUsage: skill.timeUsage});
 		}
 		return acc;
 	}, []);
@@ -175,7 +175,10 @@ export function buildHorseParameters(horseDesc, course: CourseData, mood: Mood, 
 		surfaceAptitude: parseAptitude(horseDesc.surfaceAptitude, 'surface'),
 		strategyAptitude: parseAptitude(horseDesc.strategyAptitude, 'strategy'),
 		rawStamina: horseDesc.stamina * motivCoef,
-		rawWisdom: adjustOvercap(horseDesc.wisdom) * motivCoef
+		rawWisdom: adjustOvercap(horseDesc.wisdom) * motivCoef,
+		// SKL-7: same definition as buildBaseStats() -- max of the five stats post-motivation and
+		// post-overcap, before the course/ground/strategy modifiers applied above.
+		maxRawStat: Math.max(baseStats.speed, baseStats.stamina, baseStats.power, baseStats.guts, baseStats.wisdom)
 	});
 }
 
