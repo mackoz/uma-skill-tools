@@ -36,8 +36,13 @@ function reconciledPolicy(node: AstNode) {
 	if (right == null) return null;
 	try {
 		return left.reconcile(right);
-	} catch (_) {
-		return null;
+	} catch (e) {
+		// Narrow to the one intentional throw, the way test/arb/Race.ts's isUnregisteredConditionError() does: matches the
+		// literal message ActivationSamplePolicy.ts raises at both sites (:257 and :293). Anything else — a policy that grew a
+		// new subclass, or lost one of its reconcileX methods — is a real bug, and swallowing it here would silently shrink the
+		// generated input space while the test stayed green.
+		if (e instanceof Error && e.message.startsWith('cannot reconcile')) return null;
+		throw e;
 	}
 }
 
