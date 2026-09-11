@@ -22,11 +22,13 @@
 // working tree (renamed away by the commit that replaced it). It is still reproducible, not lost:
 //   git show c3954ab:test/regression/checkpoints/20260909.5ecc3aa.2432198835.json
 // (c3954ab is this branch's merge-base, the last commit before any SKL-21 change). Replaying this
-// file's logic against that recovered checkpoint reproduces the numbers the re-record was
-// authorized on: non-cooldown 233 checked / 0 diverged; cooldown 66 checked / 9 diverged -- i.e.
-// the only cases the cooldown re-arm touched were cases that actually contain a cooldown-bearing
-// skill. (Those counts come from the fix-round re-reviewer's full-partition replay, not this file's
-// own SampleSize=300 sample, which is why they don't match this file's own sample sizes.)
+// file's own logic (SampleSize=300, ShuffleSeed=0x5c121) against that recovered checkpoint
+// reproduces the numbers the re-record was authorized on: non-cooldown 233 checked / 0 diverged;
+// cooldown 66 checked / 9 diverged -- i.e. the only cases the cooldown re-arm touched were cases
+// that actually contain a cooldown-bearing skill. These are this file's own 300-case sample
+// results, not a full-partition replay -- the old checkpoint's actual partition is 7694
+// non-cooldown / 2306 cooldown-involving cases out of 10000 total; a true full-partition replay
+// would read those larger numbers instead.
 import { test, expect } from 'vitest';
 import * as fs from 'fs';
 import * as path from 'path';
