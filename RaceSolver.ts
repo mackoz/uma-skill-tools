@@ -237,6 +237,12 @@ export interface PendingSkill {
 	extraCondition: DynamicCondition
 	effects: SkillEffect[]
 	originWisdom?: number
+	// SKL-21. Present only for skills master.mdb gives a real cooldown. `spares` are further
+	// candidate trigger points, each after the one before it; the solver advances into them after
+	// an activation instead of dropping the skill. Seconds, not distance-scaled.
+	cooldown?: number
+	spares?: Region[]
+	cooldownTimer?: Timer
 }
 
 interface ActiveSkill {

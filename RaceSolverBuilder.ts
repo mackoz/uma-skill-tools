@@ -251,6 +251,7 @@ export interface SkillData {
 	regions: RegionList,
 	extraCondition: DynamicCondition,
 	effects: SkillEffect[],
+	cooldown?: number
 	originWisdom?: number
 }
 
@@ -320,6 +321,7 @@ export function buildSkillData(horse: HorseParameters, raceParams: PartialRacePa
 				regions: regions,
 				extraCondition: extraCondition,
 				effects: effects,
+				cooldown: skill.cooldown,
 				originWisdom: originWisdom
 			});
 		}
@@ -421,7 +423,7 @@ export class RaceSolverBuilder {
 	_pacerSkillIds: string[]
 	_pacerSpeedUpRate: number
 	_pacerSkillData: SkillData[];
-	_pacerTriggersBySlot: Region[][][];
+	_pacerTriggersBySlot: {flat: Region[], spares: number}[][];
 	_rng: SeededRng
 	_seed: number
 	_parser: {parse: any, tokenize: any}
@@ -595,17 +597,22 @@ export class RaceSolverBuilder {
 		this._pacerTriggersBySlot = [];
 
 		for (let slot = 0; slot < pacerSlots; ++slot) {
-			let pacerTriggers: Region[][] = [];
+			let pacerTriggers: {flat: Region[], spares: number}[] = [];
 
 			if (this._pacerSkillIds.length > 0) {
 				const triggerSeed = deriveSeed(baseSeed, `pacer-triggers:${slot}`);
 				const occurrences = new Map<string, number>();
+				// SKL-21: identical spares treatment to build()'s main sampling -- a cooldown skill on a
+				// pacemaker must be able to activate more than once too.
+				const SPARES = 3;
 				pacerTriggers = this._pacerSkillData.map(sd => {
 					const key = sd.perspective != null ? this.getSamplePolicyKey(sd.skillId, sd.perspective) : sd.skillId;
 					const occurrence = occurrences.get(key) || 0;
 					occurrences.set(key, occurrence + 1);
 					const sp = this._samplePolicyOverride.get(key) || sd.samplePolicy;
-					return sp.sample(sd.regions, this.nsamples, new Rule30CARng(deriveSeed(triggerSeed, `${key}:${occurrence}`)));
+					const spares = sd.cooldown != null ? SPARES : 0;
+					const flat = sp.sample(sd.regions, this.nsamples, new Rule30CARng(deriveSeed(triggerSeed, `${key}:${occurrence}`)), spares);
+					return {flat, spares};
 				});
 			}
 
@@ -617,14 +624,21 @@ export class RaceSolverBuilder {
 		const pacerTriggers = this._pacerTriggersBySlot[slot] || [];
 
 		const pacerSkills = this._pacerSkillData.length > 0
-			? this._pacerSkillData.map((sd, sdi) => ({
-				skillId: sd.skillId,
-				perspective: sd.perspective,
-				rarity: sd.rarity,
-				trigger: pacerTriggers[sdi][i % pacerTriggers[sdi].length],
-				extraCondition: sd.extraCondition,
-				effects: sd.effects
-			}))
+			? this._pacerSkillData.map((sd, sdi) => {
+				const {flat, spares} = pacerTriggers[sdi];
+				const n = flat.length / (1 + spares);
+				const si = i % n;
+				return {
+					skillId: sd.skillId,
+					perspective: sd.perspective,
+					rarity: sd.rarity,
+					trigger: flat[si],
+					extraCondition: sd.extraCondition,
+					effects: sd.effects,
+					cooldown: sd.cooldown,
+					spares: spares > 0 ? flat.slice(n + si * spares, n + (si + 1) * spares) : undefined
+				};
+			})
 			: this._pacerSkills;
 
 		return pacerHorse ? new RaceSolver({
@@ -875,12 +889,18 @@ export class RaceSolverBuilder {
 		const skilldata = this._skills.flatMap(({id,p,originWisdom}) => makeSkill(id, p, false, originWisdom));
 		this._extraSkillHooks.forEach(h => h(skilldata, horse, this._course));
 		const occurrences = new Map<string, number>();
+		// SKL-21: a cooldown skill gets 3 spare candidates -- the longest supported course is 3600m
+		// at roughly 145s, so a 30s cooldown admits at most four activations. Non-cooldown skills
+		// pass 0 and draw exactly what they always drew.
+		const SPARES = 3;
 		const triggers = skilldata.map(sd => {
 			const key = sd.perspective != null ? this.getSamplePolicyKey(sd.skillId, sd.perspective) : sd.skillId;
 			const occurrence = occurrences.get(key) || 0;
 			occurrences.set(key, occurrence + 1);
 			const sp = this._samplePolicyOverride.get(key) || sd.samplePolicy;
-			return sp.sample(sd.regions, this.nsamples, new Rule30CARng(deriveSeed(skillTriggerSeed, `${key}:${occurrence}`)))
+			const spares = sd.cooldown != null ? SPARES : 0;
+			const flat = sp.sample(sd.regions, this.nsamples, new Rule30CARng(deriveSeed(skillTriggerSeed, `${key}:${occurrence}`)), spares);
+			return {flat, spares};
 		});
 
 		// must come after skill activations are decided because conditions like base_power depend on base stats
@@ -889,15 +909,22 @@ export class RaceSolverBuilder {
 		for (let i = 0; i < this.nsamples; ++i) {
 			let solverRng = new Rule30CARng(this._rng.int32());
 
-			const skills = skilldata.map((sd,sdi) => ({
-				skillId: sd.skillId,
-				perspective: sd.perspective,
-				rarity: sd.rarity,
-				trigger: triggers[sdi][i % triggers[sdi].length],
-				extraCondition: sd.extraCondition,
-				effects: sd.effects,
-				originWisdom: sd.originWisdom
-			}));
+			const skills = skilldata.map((sd, sdi) => {
+				const {flat, spares} = triggers[sdi];
+				const n = flat.length / (1 + spares);
+				const si = i % n;
+				return {
+					skillId: sd.skillId,
+					perspective: sd.perspective,
+					rarity: sd.rarity,
+					trigger: flat[si],
+					extraCondition: sd.extraCondition,
+					effects: sd.effects,
+					originWisdom: sd.originWisdom,
+					cooldown: sd.cooldown,
+					spares: spares > 0 ? flat.slice(n + si * spares, n + (si + 1) * spares) : undefined
+				};
+			});
 
 			const hpRng = new Rule30CARng(this._rng.int32());
 			const hpPolicy = this._mode === 'compare' ? new GameHpPolicy(this._course, this._raceParams.groundCondition, hpRng) : NoopHpPolicy;
