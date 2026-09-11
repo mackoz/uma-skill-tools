@@ -139,42 +139,59 @@ export const RandomPolicy = Object.freeze({
 export abstract class DistributionRandomPolicy {
 	abstract distribution(upper: number, nsamples: number, rng: PRNG): number[]
 
-	sample(regions: RegionList, nsamples: number, rng: PRNG) {
+	// `pos` carries the offset still to be consumed; adding this region's start and subtracting
+	// its end (when it doesn't fit) leaves the remainder for the next one.
+	// NB. the loop must stay bounded by `rs.length` even though `pos < range` by construction:
+	// `range` is summed in a different order than this walk re-accumulates it, so for some region
+	// layouts the two float sums disagree by an ulp and the remainder at the last region comes out
+	// a hair over its length. Saturating into the last region there matches what this already does
+	// when the remainder equals the region length exactly -- the wrap test is `>`, not `>=`. See
+	// SKL-29.
+	// Corollary: this is unconditionally total, so a *large* overshoot (say a future
+	// distribution() returning well past `range`) is absorbed the same way -- as a zero-length
+	// trigger at the last region's end, i.e. a skill that never activates for that sample --
+	// rather than surfacing. That is the deliberate trade: a sample policy must not throw. If you
+	// are here debugging a skill that mysteriously never fires, check what distribution() is
+	// actually returning before suspecting this loop.
+	// ANCHOR: distribution-random-region-walk
+	private walk(rs: Region[], pos: number): Region {
+		for (let j = 0; j < rs.length; j++) {
+			pos += rs[j].start;
+			if (pos > rs[j].end && j < rs.length - 1) {
+				pos -= rs[j].end;
+			} else {
+				return new Region(Math.min(pos, rs[j].end), rs[j].end);
+			}
+		}
+	}
+
+	sample(regions: RegionList, nsamples: number, rng: PRNG, spares: number = 0) {
 		if (regions.length == 0) {
 			return [];
 		}
-		const range = regions.reduce((acc,r) => acc + r.end - r.start, 0);
-		const rs = regions.slice().sort((a,b) => a.start - b.start);
-		const randoms = this.distribution(range, nsamples, rng);
-		const samples = [];
+		const range = regions.reduce((acc, r) => acc + r.end - r.start, 0);
+		const rs = regions.slice().sort((a, b) => a.start - b.start);
+		// SKL-21: one batch of nsamples * (1 + spares) draws. distribution() is prefix-stable (see
+		// the bounds tests above), so the first nsamples values are exactly what a spares=0 call
+		// would have drawn -- the primaries cannot move.
+		const randoms = this.distribution(range, nsamples * (1 + spares), rng);
+		const placed = randoms.map(offset => this.walk(rs, offset));
+		const primaries = placed.slice(0, nsamples);
+		if (spares == 0) return primaries;
+		const end = rs[rs.length - 1].end;
+		const tail: Region[] = [];
 		for (let i = 0; i < nsamples; ++i) {
-			let pos = randoms[i];
-			// `pos` carries the offset still to be consumed; adding this region's start and
-			// subtracting its end (when it doesn't fit) leaves the remainder for the next one.
-			// NB. the loop must stay bounded by `rs.length` even though `randoms[i] < range` by
-			// construction: `range` is summed in a different order than this walk re-accumulates
-			// it, so for some region layouts the two float sums disagree by an ulp and the
-			// remainder at the last region comes out a hair over its length. Saturating into the
-			// last region there matches what this already does when the remainder equals the
-			// region length exactly -- the wrap test is `>`, not `>=`. See SKL-29.
-			// Corollary: this is unconditionally total, so a *large* overshoot (say a future
-			// distribution() returning well past `range`) is absorbed the same way -- as a
-			// zero-length trigger at the last region's end, i.e. a skill that never activates for
-			// that sample -- rather than surfacing. That is the deliberate trade: a sample policy
-			// must not throw. If you are here debugging a skill that mysteriously never fires,
-			// check what distribution() is actually returning before suspecting this loop.
-			// ANCHOR: distribution-random-region-walk
-			for (let j = 0; j < rs.length; j++) {
-				pos += rs[j].start;
-				if (pos > rs[j].end && j < rs.length - 1) {
-					pos -= rs[j].end;
-				} else {
-					samples.push(new Region(Math.min(pos, rs[j].end), rs[j].end));
-					break;
-				}
-			}
+			// A spare is only usable if it lands after the primary; the distribution has no notion
+			// of "after", so draws that fall behind it are dropped rather than relocated. A late
+			// primary therefore tends to yield no spares, which is the right shape anyway -- less
+			// race remains for a second activation.
+			const usable = placed
+				.slice(nsamples + i * spares, nsamples + (i + 1) * spares)
+				.filter(r => r.start > primaries[i].start)
+				.sort((a, b) => a.start - b.start);
+			tail.push(...padSpares([primaries[i]].concat(usable), spares, end));
 		}
-		return samples;
+		return primaries.concat(tail);
 	}
 
 	reconcile(other: ActivationSamplePolicy) { return other.reconcileDistributionRandom(this); }

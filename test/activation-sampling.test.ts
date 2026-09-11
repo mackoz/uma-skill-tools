@@ -239,3 +239,38 @@ for (const [name, policy] of SPARE_POLICIES) {
 		}
 	});
 }
+
+// SKL-21: the distribution policies get spares too -- 30 of the 58 cooldown skills use them, and
+// they are the only family the replay corpus has ever caught re-triggering. Their primaries must
+// stay identical because distribution() is prefix-stable (pinned by the tests above), so drawing a
+// longer batch cannot disturb the first nsamples values.
+test('ErlangRandomPolicy: spares=2 preserves primaries and orders spares after them', () => {
+	const policy = new ErlangRandomPolicy(3, 2.0);
+	const base = policy.sample(SPARE_REGIONS, 4, new Rule30CARng(777));
+	const withSpares = policy.sample(SPARE_REGIONS, 4, new Rule30CARng(777), 2);
+	strictEqual(withSpares.length, 4 * 3);
+	deepStrictEqual(
+		withSpares.slice(0, 4).map(r => [r.start, r.end]),
+		base.map(r => [r.start, r.end]),
+		'primaries unchanged by requesting spares'
+	);
+	for (let i = 0; i < 4; ++i) {
+		let prev = withSpares[i].start;
+		for (let j = 0; j < 2; ++j) {
+			const spare = withSpares[4 + i * 2 + j];
+			if (spare.end - spare.start === 0) continue;
+			ok(spare.start > prev, `sample ${i} spare ${j} follows the previous point`);
+			prev = spare.start;
+		}
+	}
+});
+
+test('ErlangRandomPolicy: spares=0 is unchanged from omitting it', () => {
+	const policy = new ErlangRandomPolicy(3, 2.0);
+	const implicit = policy.sample(SPARE_REGIONS, 4, new Rule30CARng(4242));
+	const explicit = policy.sample(SPARE_REGIONS, 4, new Rule30CARng(4242), 0);
+	deepStrictEqual(
+		implicit.map(r => [r.start, r.end]),
+		explicit.map(r => [r.start, r.end])
+	);
+});
