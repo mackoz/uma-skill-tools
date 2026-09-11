@@ -1,0 +1,47 @@
+#!/bin/sh
+# PII tripwire (PIPE-67): refuses a commit whose staged *added* lines match a macOS/Linux
+# home path, a sanitized Claude transcript directory name, or a pattern from an untracked
+# per-user file. This is the only check in this repo's hook so far -- see the parent
+# uma-tools/scripts/check-no-pii-helpers.mjs for the JS counterpart these generic patterns
+# mirror, and CLAUDE.md's "never a home path or the account holder's name in tracked
+# prose" rule. Personal identifiers (a real name, a real email) belong only in the
+# per-user pattern file below, never in this tracked script.
+#
+# Installed via: git config core.hooksPath .githooks
+
+pii_patterns='/Users/[^/[:space:]]+/|/home/[^/[:space:]]+/|-Users-[A-Za-z0-9.-]+-github-'
+personal_file="${XDG_CONFIG_HOME:-$HOME/.config}/uma-tools/pii-patterns"
+if [ -f "$personal_file" ]; then
+	personal_patterns=$(grep -v '^[[:space:]]*#' "$personal_file" | grep -v '^[[:space:]]*$' | tr '\n' '|' | sed 's/|$//')
+	if [ -n "$personal_patterns" ]; then
+		pii_patterns="$pii_patterns|$personal_patterns"
+	fi
+fi
+
+pii_hits=$(git diff --cached -U0 -- . ':!package-lock.json' | awk -v pat="$pii_patterns" '
+	/^\+\+\+ / {
+		file = $0
+		sub(/^\+\+\+ /, "", file)
+		sub(/^b\//, "", file)
+		next
+	}
+	/^@@/ {
+		match($0, /\+[0-9]+/)
+		line = substr($0, RSTART + 1, RLENGTH - 1) + 0
+		next
+	}
+	/^\+/ && file != "/dev/null" {
+		text = substr($0, 2)
+		if (text ~ pat) print file ":" line ": " text
+		line++
+		next
+	}
+')
+
+if [ -n "$pii_hits" ]; then
+	echo "pre-commit: staged added line(s) look like a personal path or identifier (PIPE-67):" >&2
+	echo "$pii_hits" >&2
+	echo "" >&2
+	echo "Use \$UMA_CODE_REPO/\$UMA_ENGINE_REPO/\$UMA_PLANS_REPO or a ~-relative path instead, or commit anyway with --no-verify if this is a false positive." >&2
+	exit 1
+fi

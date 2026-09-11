@@ -14,6 +14,7 @@ Guidance for working in this repo. It's the race-simulation engine — no UI, no
 
 - **Prefer one open PR in this repo at a time — soft guidance, not a hard rule.** Before creating a branch, check for an existing open PR/branch covering the same area (`gh pr list`) and push to that branch instead of branching off the default branch again, when the new work is genuinely the same thread. If it isn't (a second, unrelated PR is really warranted), that's fine — just flag it and confirm with the user before opening it, rather than opening a second PR silently.
 - A PR merged here isn't done until `mackoz/uma-tools` bumps its submodule gitlink (see the workflow above).
+- **This repo has a pre-commit hook** (`.githooks/pre-commit`, PIPE-67): it refuses a commit whose staged *added* lines look like a macOS/Linux home path (`/Users/<user>/...`, `/home/<user>/...`), a sanitized Claude transcript directory name (`-Users-<user>-github-...`), or a pattern from an untracked per-user file at `${XDG_CONFIG_HOME:-$HOME/.config}/uma-tools/pii-patterns` (one regex per line, `#` comments allowed) — that's where a real name or email address belongs, never in a tracked file. One-time setup per clone: `git config core.hooksPath .githooks`. A genuine false positive can be committed with `--no-verify`.
 
 ## Hard rules
 
@@ -71,6 +72,7 @@ PIPE-50 migrated the first eight of these files off `tape` onto Vitest 5 (`vites
 
 ## Documentation changes
 
+- Ticket/doc prose uses `$UMA_CODE_REPO`/`$UMA_ENGINE_REPO`/`$UMA_PLANS_REPO` or a `~`-relative form, never an absolute home path or the account holder's name — the pre-commit hook refuses it.
 - When rewriting a doc (`README.md`, `docs/adr/`), keep its existing format — tables stay tables; don't convert a table to prose unless explicitly asked.
 - Verify factual claims (mechanics numbers, table/column names, error behavior) against the source or a real `master.mdb` query before writing them, and cite the file you checked.
 
