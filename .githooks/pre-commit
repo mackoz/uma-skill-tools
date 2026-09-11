@@ -9,7 +9,10 @@
 #
 # Installed via: git config core.hooksPath .githooks
 
-pii_patterns='/Users/[^/[:space:]]+/|/home/[^/[:space:]]+/|-Users-[A-Za-z0-9.-]+-github-'
+# The user segment excludes `<`, so placeholder notation (`/Users/<user>/...`) in docs is not a
+# hit -- only a concrete account name is. This hook's own file is excluded from the diff below
+# for the same reason (it necessarily contains the pattern text).
+pii_patterns='/Users/[^/[:space:]<]+/|/home/[^/[:space:]<]+/|-Users-[A-Za-z0-9.-]+-github-'
 personal_file="${XDG_CONFIG_HOME:-$HOME/.config}/uma-tools/pii-patterns"
 if [ -f "$personal_file" ]; then
 	personal_patterns=$(grep -v '^[[:space:]]*#' "$personal_file" | grep -v '^[[:space:]]*$' | tr '\n' '|' | sed 's/|$//')
@@ -18,7 +21,7 @@ if [ -f "$personal_file" ]; then
 	fi
 fi
 
-pii_hits=$(git diff --cached -U0 -- . ':!package-lock.json' | awk -v pat="$pii_patterns" '
+pii_hits=$(git diff --cached -U0 -- . ':!package-lock.json' ':!.githooks/pre-commit' | awk -v pat="$pii_patterns" '
 	/^\+\+\+ / {
 		file = $0
 		sub(/^\+\+\+ /, "", file)
