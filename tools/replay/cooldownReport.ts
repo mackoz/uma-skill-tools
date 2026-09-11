@@ -28,7 +28,13 @@ function family(skillId: string): Family {
 	if (entry == null) return 'other';
 	const cond = entry.alternatives.map((a: any) => a.condition).join('@');
 	if (/all_corner_random|straight_random|is_finalcorner_random/.test(cond)) return 'discrete';
-	if (/near_lane_time|change_order_onetime|blocked_|accumulatetime/.test(cond)) return 'distribution';
+	// NB. `accumulatetime` alone resolves to ImmediatePolicy (0 spares) and cannot re-trigger on its
+	// own -- it only re-arms when ANDed with one of the conditions below, in which case `cond`
+	// already contains that condition's name too. So `accumulatetime` is deliberately absent from
+	// this regex: including it would misclassify an accumulatetime-only skill (which structurally
+	// can't re-trigger) as belonging to the family that can. See README.md's "Skill cooldowns"
+	// section and CLAUDE.md's engine-behavior bullet for the authoritative statement of this.
+	if (/near_lane_time|change_order_onetime|blocked_/.test(cond)) return 'distribution';
 	return 'other';
 }
 
