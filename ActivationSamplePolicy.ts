@@ -20,7 +20,16 @@ export interface ActivationSamplePolicy {
 }
 
 export const ImmediatePolicy = Object.freeze({
-	sample(regions: RegionList, _0: number, _1: PRNG) { return regions.slice(0,1); },
+	// SKL-21: nsamples is still ignored -- an immediate condition has one fixed window, so every
+	// sample reuses the same single primary, exactly as before spares existed. Only the spare tail
+	// is new: it's padded with zero-length regions because a fixed window must never re-arm, and a
+	// zero-length region can never satisfy `pos >= trigger.start && pos < trigger.end`, so it is
+	// permanently inert (see padSpares).
+	sample(regions: RegionList, _nsamples: number, _rng: PRNG, spares: number = 0) {
+		const primaries = regions.slice(0, 1);
+		if (spares === 0 || primaries.length === 0) return primaries;
+		return primaries.concat(padSpares([], spares, primaries[0].end, 0));
+	},
 	reconcile(other: ActivationSamplePolicy) { return other.reconcileImmediate(this); },
 	reconcileImmediate(other: ActivationSamplePolicy) { return other; },
 	reconcileDistributionRandom(other: ActivationSamplePolicy) { return other; },
@@ -406,13 +415,23 @@ export const AllCornerRandomPolicy = Object.freeze({
  */
 export function createFixedPositionPolicy(position: number): ActivationSamplePolicy {
 	return Object.freeze({
-		sample(_regions: RegionList, nsamples: number, _rng: PRNG) {
+		// SKL-21: honors the nsamples*(1+spares) layout contract -- nsamples primaries at the
+		// pinned position, then nsamples*spares zero-length regions grouped per sample at the
+		// fixed stride. A pin means "fire exactly here"; it must never re-arm, so every spare is a
+		// zero-length region, which can never satisfy `pos >= trigger.start && pos < trigger.end`
+		// and is therefore permanently inert (see padSpares).
+		sample(_regions: RegionList, nsamples: number, _rng: PRNG, spares: number = 0) {
 			// Always return the same fixed position for all samples
 			const samples = [];
 			for (let i = 0; i < nsamples; ++i) {
 				samples.push(new Region(position, position + 10));
 			}
-			return samples;
+			if (spares === 0) return samples;
+			const tail: Region[] = [];
+			for (let i = 0; i < nsamples; ++i) {
+				tail.push(...padSpares([], spares, position + 10, 0));
+			}
+			return samples.concat(tail);
 		},
 		reconcile(_other: ActivationSamplePolicy) { return this; },
 		reconcileImmediate(_: ActivationSamplePolicy) { return this; },

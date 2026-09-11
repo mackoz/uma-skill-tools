@@ -1,6 +1,6 @@
 import { test } from 'vitest';
 import { strictEqual, notStrictEqual, ok, deepStrictEqual } from 'node:assert/strict';
-import { DistributionRandomPolicy, ErlangRandomPolicy, LogNormalRandomPolicy, RandomPolicy, StraightRandomPolicy, AllCornerRandomPolicy } from '../ActivationSamplePolicy';
+import { DistributionRandomPolicy, ErlangRandomPolicy, LogNormalRandomPolicy, RandomPolicy, StraightRandomPolicy, AllCornerRandomPolicy, createFixedPositionPolicy } from '../ActivationSamplePolicy';
 import { Region, RegionList } from '../Region';
 import { deriveSeed, PRNG, Rule30CARng } from '../Random';
 import courses from '../data/jp/course_data.json';
@@ -272,5 +272,40 @@ test('ErlangRandomPolicy: spares=0 is unchanged from omitting it', () => {
 	deepStrictEqual(
 		implicit.map(r => [r.start, r.end]),
 		explicit.map(r => [r.start, r.end])
+	);
+});
+
+// SKL-21 fix-report finding: createFixedPositionPolicy is used only by tools/replay/replayDiff.ts
+// via addSkillAtPosition's _samplePolicyOverride, but that path is exactly what Task 6 builds on,
+// and the replay corpus is dense with cooldown-bearing skills. It must satisfy the
+// nsamples * (1 + spares) layout contract or build()'s `n = flat.length / (1 + spares)` goes
+// fractional and the indexing breaks. A pinned position means "fire exactly here" and must never
+// re-arm, so every spare is a zero-length region -- permanently inert, since a zero-length region
+// can never satisfy `pos >= trigger.start && pos < trigger.end`.
+test('createFixedPositionPolicy: spares=2 returns nsamples * (1 + spares) regions, all-inert spares', () => {
+	const policy = createFixedPositionPolicy(1234);
+	const nsamples = 5;
+	const spares = 2;
+	const out = policy.sample(SPARE_REGIONS, nsamples, new Rule30CARng(20260910), spares);
+	strictEqual(out.length, nsamples * (1 + spares), 'nsamples * (1 + spares) regions returned');
+
+	const primaries = out.slice(0, nsamples);
+	ok(primaries.every(r => r.start === 1234 && r.end === 1244), 'every primary is pinned at the fixed position');
+
+	for (let i = 0; i < nsamples; ++i) {
+		for (let j = 0; j < spares; ++j) {
+			const spare = out[nsamples + i * spares + j];
+			strictEqual(spare.end - spare.start, 0, `sample ${i} spare ${j} is zero-length`);
+		}
+	}
+});
+
+test('createFixedPositionPolicy: spares=0 is unchanged from omitting it', () => {
+	const policy = createFixedPositionPolicy(1234);
+	const implicit = policy.sample(SPARE_REGIONS, 5, new Rule30CARng(20260910));
+	const explicit = policy.sample(SPARE_REGIONS, 5, new Rule30CARng(20260910), 0);
+	deepStrictEqual(
+		implicit.map((r: Region) => [r.start, r.end]),
+		explicit.map((r: Region) => [r.start, r.end])
 	);
 });
