@@ -8,12 +8,12 @@ import { RaceSolver, PendingAction, PendingSkill, Timer } from '../RaceSolver';
 import { Region } from '../Region';
 import { attachMethods } from './RaceSolverTestHelpers';
 
-function makeStub(pos: number) {
+function makeStub(pos: number, wisdom: {shouldSkipWisdomCheck?: (s: PendingSkill) => boolean, checkWisdomForSkill?: (s: PendingSkill) => boolean} = {}) {
 	return attachMethods({
 		pos,
 		pendingRemoval: new Set<string>(),
-		shouldSkipWisdomCheck: (_: PendingSkill) => true,
-		checkWisdomForSkill: (_: PendingSkill) => true
+		shouldSkipWisdomCheck: wisdom.shouldSkipWisdomCheck ?? ((_: PendingSkill) => true),
+		checkWisdomForSkill: wisdom.checkWisdomForSkill ?? ((_: PendingSkill) => true)
 	}, 'pendingSkillAction', 'rearmSkill');
 }
 
@@ -83,4 +83,28 @@ test('pendingRemoval wins over a re-arm', () => {
 	const stub = makeStub(1005);
 	stub.pendingRemoval.add('200331');
 	strictEqual(stub.pendingSkillAction(s), PendingAction.Remove);
+});
+
+// SKL-21 review (Important 2): the cooldown check must run before the wisdom check, but every
+// test above stubs shouldSkipWisdomCheck to always skip it -- none of them actually exercise the
+// wisdom branch, so none could catch the two lines being swapped. This test uses a wisdom stub
+// that ALWAYS fails, on a candidate that is still cooling down: if cooldown were checked first (as
+// it must be), the wisdom stub is never consulted and the result is Rearm. If the order were
+// swapped -- wisdom checked before cooldown -- this same candidate would fail its wisdom roll and
+// return Remove instead, discarding its remaining spare. Verified by hand that swapping
+// RaceSolver.ts's cooldown-check and wisdom-check lines makes this test fail, then swapping them
+// back restores the pass (see task-5-report.md).
+test('a cooling-down candidate is skipped via cooldown before the wisdom check ever runs', () => {
+	const s = skill({
+		trigger: new Region(1500, 1510),
+		cooldown: 30,
+		spares: [new Region(1800, 1810)],
+		cooldownTimer: new Timer(-12)   // 12s still to run
+	});
+	const stub = makeStub(1505, {
+		shouldSkipWisdomCheck: (_: PendingSkill) => false,
+		checkWisdomForSkill: (_: PendingSkill) => false   // would fail every roll if ever consulted
+	});
+	strictEqual(stub.pendingSkillAction(s), PendingAction.Rearm,
+		'cooldown must be checked before wisdom, so a failing wisdom stub is never reached');
 });

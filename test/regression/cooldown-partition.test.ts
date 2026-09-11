@@ -98,28 +98,40 @@ function replayMatchesRecording(testCase: any): boolean {
 
 test('no case without a cooldown-bearing skill diverges from the checkpoint', () => {
 	const sample = sampleCases(allCases, SampleSize, ShuffleSeed);
-	const offenders: number[] = [];
+	const offenders: string[] = [];
 	let nonCooldownChecked = 0;
 
 	sample.forEach((testCase: any, i: number) => {
 		if (involvedSkillIds(testCase.params).some(id => cooldownSkillIds.has(id))) return;
 		nonCooldownChecked++;
-		let matches: boolean;
+		let matches = false;
+		let caught = false;
 		try {
 			matches = replayMatchesRecording(testCase);
 		} catch (_) {
-			// A build/replay throw is symmetric between standard/compare builders and is exercised
-			// (and tolerated) by check.ts itself via testCase.result.err; this test only cares about
-			// numeric divergence, not pre-existing build failures unrelated to SKL-21.
-			matches = true;
+			caught = true;
 		}
-		if (!matches) offenders.push(i);
+		// SKL-21 review (Minor 5, upgraded to must-fix): a bare `catch { matches = true }` treats
+		// every throw as a pass without checking whether a throw was actually expected here -- a
+		// newly-introduced throw (e.g. a regression that makes the engine blow up on a case that
+		// used to build and run fine) would be silently swallowed and invisible, in the one test
+		// that is the entire justification for re-recording the checkpoint baseline. check.ts's own
+		// `testCase.result.err` records whether recording this case threw; a build/replay throw is
+		// symmetric between the standard/compare builders by construction (both sides are built
+		// from the same params), so whether THIS replay throws must match that recorded flag
+		// exactly, not just "some throw happened, treat it as fine."
+		const expectedToThrow = !!testCase.result.err;
+		if (caught !== expectedToThrow) {
+			offenders.push(`case ${i}: threw=${caught}, expected threw=${expectedToThrow} (testCase.result.err)`);
+		} else if (!caught && !matches) {
+			offenders.push(`case ${i}: diverged from recorded gain values`);
+		}
 	});
 
 	// Guard against the sample accidentally containing no non-cooldown cases at all, which would
 	// make the assertion below vacuously true and useless.
 	expect(nonCooldownChecked).toBeGreaterThan(0);
-	expect(offenders, `cases diverged with no cooldown-bearing skill involved: ${JSON.stringify(offenders)}`).toEqual([]);
+	expect(offenders, `cases diverged with no cooldown-bearing skill involved:\n${offenders.join('\n')}`).toEqual([]);
 }, 30000);
 
 // SKL-21: the checkpoint divergence's magnitude has a long tail -- traced by hand for the single
