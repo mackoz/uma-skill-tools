@@ -121,3 +121,82 @@ test('no case without a cooldown-bearing skill diverges from the checkpoint', ()
 	expect(nonCooldownChecked).toBeGreaterThan(0);
 	expect(offenders, `cases diverged with no cooldown-bearing skill involved: ${JSON.stringify(offenders)}`).toEqual([]);
 }, 30000);
+
+// SKL-21: the checkpoint divergence's magnitude has a long tail -- traced by hand for the single
+// largest offender (see the task-5-report.md discussion this test is named after), but tracing
+// each remaining large case by hand proves nothing about the next one and is unbounded work. This
+// is the structural invariant that subsumes all of them: bound how many times any one (skill,
+// race) pair can possibly activate, so a magnitude outlier can only ever be an "occasional extra
+// activation," never a runaway re-arm. If this test ever fails, that changes the picture
+// completely -- a real bug, not sensitivity in an already-volatile gain metric -- and the ceiling
+// must not be loosened to make it pass.
+//
+// Ceiling only, deliberately no floor: an earlier version of this test also asserted "a skill
+// without a cooldown never activates more than once" and that assertion was wrong, not this
+// engine. Skills like `901311` and `106202221` have two `alternatives` with no `cooldown` on
+// either, where the second alternative's condition matches `is_activate_other_skill_detail` or
+// `is_used_skill_id` -- RaceSolverBuilder.ts's `second-trigger-detail-guard` (`:296-304`)
+// deliberately keeps both as separate trigger entries sharing one skillId in that case, each
+// independently eligible to activate once, which legitimately produces 2 (observed up to 4 in one
+// case) activations of the same skillId with no cooldown involved anywhere. Confirmed pre-existing
+// by replaying the checkpoint against this branch's merge-base (`c3954ab`, no SKL-21 commits
+// present) in a scratch worktree: the same skills hit the same counts there. The non-cooldown
+// guarantee this test actually needs is already covered, and covered more strongly, by the first
+// test in this file: it replays every sampled non-cooldown case end-to-end and requires its
+// *result* to match the checkpoint exactly, and identical results necessarily imply identical
+// activation counts. A narrower "once per PendingSkill entry" floor here would just restate
+// something already true by construction and already checked there -- so there is deliberately no
+// floor assertion in this test.
+test('no (skill, race) pair with a cooldown ever activates more than 1 + SPARES times', () => {
+	// RaceSolverBuilder.ts:607 (AllCornerRandomPolicy path) and :895 (main sampling path) both
+	// declare `const SPARES = 3` -- not exported, so this ceiling is hardcoded and named here
+	// instead. If either constant changes, this must change with it.
+	const Spares = 3;
+	const MaxActivationsWithCooldown = 1 + Spares;
+
+	const sample = sampleCases(allCases, SampleSize, ShuffleSeed);
+	let maxObservedWithCooldown = 0;
+	const offenders: string[] = [];
+
+	sample.forEach((testCase: any, i: number) => {
+		try {
+			const standard = makeBuilder(testCase.params);
+			const compare = standard.fork();
+			testCase.params.skillsUnderTest.forEach((id: string) => compare.addSkill(id));
+
+			const counts = new Map<string, number>();
+			compare.onSkillActivate((_state: any, skillId: string) => {
+				counts.set(skillId, (counts.get(skillId) ?? 0) + 1);
+			});
+
+			const g1 = compare.build(), g2 = standard.build();
+			for (let s = 0; s < testCase.params.nsamples; ++s) {
+				counts.clear();
+				const s1 = g1.next().value as RaceSolver, s2 = g2.next().value as RaceSolver;
+				while (s1.pos < (standard as any)._course.distance) s1.step(testCase.timestep);
+				while (s2.accumulatetime.t < s1.accumulatetime.t) s2.step(testCase.timestep);
+
+				counts.forEach((count, skillId) => {
+					if (!cooldownSkillIds.has(skillId)) return;
+					maxObservedWithCooldown = Math.max(maxObservedWithCooldown, count);
+					if (count > MaxActivationsWithCooldown) {
+						offenders.push(`case ${i} sample ${s}: skill ${skillId} activated ${count} times, ceiling ${MaxActivationsWithCooldown}`);
+					}
+				});
+			}
+		} catch (_) {
+			// Build/replay throws are pre-existing and symmetric between the two builders; not this
+			// test's concern (cooldown-partition.test.ts's first test already tolerates them the
+			// same way).
+		}
+	});
+
+	// The ceiling is actually reached (not just theoretically possible), which is load-bearing: it
+	// means SPARES=3 is a real, binding limit for at least one sampled case, not slack that happens
+	// to never get used. (Separately, and intentionally not acted on here: reaching the ceiling on
+	// a 30s cooldown implies some race is long enough to want a 5th+ activation that SPARES=3
+	// doesn't provide for -- see the ticket's own note that the "longest course at ~145s" estimate
+	// behind SPARES=3 looks too low against a more realistic ~190-225s for a 3600m race.)
+	console.log(`max activations observed for a cooldown skill: ${maxObservedWithCooldown} (ceiling: ${MaxActivationsWithCooldown})`);
+	expect(offenders, `activation-count ceiling violated:\n${offenders.join('\n')}`).toEqual([]);
+}, 30000);
