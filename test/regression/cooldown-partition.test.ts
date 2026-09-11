@@ -6,21 +6,27 @@
 // checkpoint is re-recorded against the new engine, check.ts passes trivially for every case,
 // cooldown or not.
 //
-// This test is the permanent, narrower guarantee that check.ts can no longer make by itself:
-// replaying the checkpoint's OWN recorded cases (whichever checkpoint happens to be latest, same
-// file check.ts itself reads), a case that exercises no cooldown-bearing skill must reproduce its
-// recorded `gain` values exactly. It says nothing about cases that DO exercise a cooldown skill --
-// those are expected to move, by design, and asserting anything about their direction or magnitude
-// here would just be re-deriving game mechanics nobody has measured (see
-// uma-skill-tools/CLAUDE.md's "30s constant is unverified" caveat carried over from the ticket).
+// This test replays the checkpoint's OWN recorded cases (whichever checkpoint happens to be
+// latest, same file check.ts itself reads): a case that exercises no cooldown-bearing skill must
+// reproduce its recorded `gain` values exactly. Against the CURRENT baseline (re-recorded for this
+// behavior change) that partition is 0 diverged on both sides, cooldown and non-cooldown alike --
+// check.ts already makes that same statement for every case, so this test is NOT a stronger
+// guarantee than check.ts today. What it adds instead: it is pinned to run every time, on a fixed
+// deterministic sample, with the non-cooldown/cooldown split broken out explicitly, so a future
+// change that makes a non-cooldown case start diverging again (the actual regression this guards
+// against) is caught immediately and attributed correctly, rather than needing another one-off
+// partition script re-run by hand.
 //
-// Before the checkpoint was re-recorded, running this same test against the OLD (pre-SKL-21)
-// checkpoint produced the partition this guards: 1139 non-cooldown cases checked, 0 diverged;
-// 361 cooldown-involving cases checked, 117 diverged -- i.e. the only cases the cooldown re-arm
-// touched were cases that actually contain a cooldown-bearing skill. That run is what justified
-// re-recording the checkpoint in the first place; this test is what keeps that justification
-// checkable by a future reader (or a future regression) instead of living only in a one-off script
-// and a PR description.
+// The partition that originally justified re-recording the checkpoint was measured against the
+// OLD (pre-SKL-21) baseline, which this checkpoint replaced and which no longer exists in the
+// working tree (renamed away by the commit that replaced it). It is still reproducible, not lost:
+//   git show c3954ab:test/regression/checkpoints/20260909.5ecc3aa.2432198835.json
+// (c3954ab is this branch's merge-base, the last commit before any SKL-21 change). Replaying this
+// file's logic against that recovered checkpoint reproduces the numbers the re-record was
+// authorized on: non-cooldown 233 checked / 0 diverged; cooldown 66 checked / 9 diverged -- i.e.
+// the only cases the cooldown re-arm touched were cases that actually contain a cooldown-bearing
+// skill. (Those counts come from the fix-round re-reviewer's full-partition replay, not this file's
+// own SampleSize=300 sample, which is why they don't match this file's own sample sizes.)
 import { test, expect } from 'vitest';
 import * as fs from 'fs';
 import * as path from 'path';
@@ -65,11 +71,13 @@ const cooldownSkillIds = new Set(
 // A sampled 408061 could legitimately reach up to MaxActivationsWithCooldown + 1 activations (one
 // from the detail entry, the rest from the cooldown entry re-arming) without any bug at all --
 // latent today only because no sampled case has hit it (max observed for this skill: 2), but a
-// future sample or a wider corpus could. This is a known, recorded limit of counting per skillId
-// rather than per (skillId, entry) or per (skillId, perspective) -- NOT a reason to change the
-// underlying gating (that's a separate question, deliberately not touched here) -- so skills with
-// more than one trigger entry are excluded from the ceiling check below rather than risk a false
-// red on a non-bug.
+// future sample or a wider corpus could. Final review judged per-entry (rather than per-skillId)
+// gating here probably CORRECT, not a limitation: 408061's second alternative is an
+// is_activate_other_skill_detail follow-on with no cooldown of its own, so gating the cooldown
+// entry independently of it is the right behavior, not a compromise. It is counting per skillId in
+// THIS TEST -- a test-side simplification, not the underlying gating -- that can't tell the two
+// entries' activations apart, so skills with more than one trigger entry are excluded from the
+// ceiling check below rather than risk a false red on a non-bug.
 const multiEntrySkillIds = new Set(
 	Object.keys(skillData).filter(id => {
 		const alts = (skillData as any)[id].alternatives;

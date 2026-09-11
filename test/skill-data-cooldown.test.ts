@@ -4,7 +4,7 @@
 // "this alternative can re-trigger". Asserted as invariants rather than a fixed id list, since
 // the data is regenerated whenever the game updates.
 import { test } from 'vitest';
-import { ok, strictEqual } from 'node:assert/strict';
+import { ok } from 'node:assert/strict';
 import jp from '../data/jp/skill_data.json';
 import global from '../data/global/skill_data.json';
 

@@ -7,9 +7,13 @@
 //   - plans/condition-reference/conditions.md:1493 (straight_random / StraightRandomPolicy):
 //     "first rolls for a straight segment, and then for a random point on that segment" -- one
 //     point, full stop, no matter how many straights the course has.
-// This pins RaceSolverBuilder's consequence of that split using two real skills that both carry a
+// This pins RaceSolverBuilder's consequence of that split using three real skills that all carry a
 // cooldown: 200341 (all_corner_random) must receive 3 spares; 200372 (straight_random) must
-// receive 0 and therefore can never re-arm.
+// receive 0 and therefore can never re-arm; 201651 (Slipstream, a distribution/erlang-family skill)
+// must also receive 3 spares, since the distribution family re-arms too (same doc, and see
+// RaceSolverBuilder.ts's `sp instanceof DistributionRandomPolicy` clause). That clause has no other
+// deterministic coverage: deleting it silently reverts re-arming for 30 of the 58 cooldown skills
+// while every other cooldown/activation-sampling test stays green.
 import { test } from 'vitest';
 import { strictEqual } from 'node:assert/strict';
 import { RaceSolverBuilder } from '../RaceSolverBuilder';
@@ -41,4 +45,8 @@ test('a cooldown skill on AllCornerRandomPolicy (all_corner_random) receives 3 s
 
 test('a cooldown skill on StraightRandomPolicy (straight_random) receives 0 spares', () => {
 	strictEqual(sparesCountFor('200372'), 0);
+});
+
+test('a cooldown skill on the distribution family (201651, Slipstream) receives 3 spares', () => {
+	strictEqual(sparesCountFor('201651'), 3);
 });

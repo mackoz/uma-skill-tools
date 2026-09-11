@@ -257,7 +257,9 @@ export interface SkillData {
 
 // SKL-21. Whether a sample policy actually places more than one candidate trigger point, i.e.
 // whether requesting spares for it means anything. Per plans/condition-reference/conditions.md:
-// - `all_corner_random` (AllCornerRandomPolicy, :125) rolls FOUR points (one per corner) --
+// - `all_corner_random` (AllCornerRandomPolicy, :125) rolls FOUR points total, not necessarily one
+//   per corner -- `placeSuccessive` can place two points in the same corner, and conditions.md:125
+//   itself says the game re-rolls a random corner (with replacement) each time too. Either way,
 //   multiple points exist for a short-cooldown skill to re-arm into.
 // - `straight_random` (StraightRandomPolicy, :1493) rolls a straight segment, then ONE point on
 //   it -- a single point, no matter how many straights the course has.
@@ -878,7 +880,12 @@ export class RaceSolverBuilder {
 		clone._course = this._course;
 		clone._raceParams = Object.assign({}, this._raceParams);
 		clone._horse = this._horse;
-		clone._pacerSkills = this._pacerSkills.slice();  // sharing the skill objects is fine but see the note below
+		// SKL-21: sharing the skill objects (rather than deep-cloning them) is fine only because the
+		// two hardcoded entries this builds (see setupPacer()) carry no cooldown and so are never
+		// passed to rearmSkill(), which now mutates a PendingSkill's `.trigger`/`.spares` in place.
+		// A pacer skill that ever gained a cooldown would have its clone and original share (and
+		// corrupt) the same mutable spares array across forked builders.
+		clone._pacerSkills = this._pacerSkills.slice();
 		clone._pacerSkillIds = this._pacerSkillIds.slice();
 		clone._pacerSpeedUpRate = this._pacerSpeedUpRate;
 		clone._pacerSkillData = this._pacerSkillData.slice();
