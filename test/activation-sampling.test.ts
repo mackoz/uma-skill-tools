@@ -1,6 +1,6 @@
 import { test } from 'vitest';
 import { strictEqual, notStrictEqual, ok, deepStrictEqual } from 'node:assert/strict';
-import { DistributionRandomPolicy, ErlangRandomPolicy, LogNormalRandomPolicy } from '../ActivationSamplePolicy';
+import { DistributionRandomPolicy, ErlangRandomPolicy, LogNormalRandomPolicy, RandomPolicy, StraightRandomPolicy, AllCornerRandomPolicy } from '../ActivationSamplePolicy';
 import { Region, RegionList } from '../Region';
 import { deriveSeed, PRNG, Rule30CARng } from '../Random';
 import courses from '../data/jp/course_data.json';
@@ -174,3 +174,68 @@ test('interior offsets are unaffected by the bounds fix', () => {
 
 	deepStrictEqual(mismatches.slice(0, 3), [], `all 500 interior offsets map to the same position as before (${mismatches.length} did not)`);
 });
+
+// SKL-21: sample() gained a `spares` argument so cooldown skills can be handed more than one
+// candidate trigger. The contract that matters most is the *absence* of change: at spares=0 every
+// policy must draw exactly the RNG values it drew before, in the same order, so that skills
+// without a cooldown produce bit-identical races. GOLDEN was captured by running the pre-SKL-21
+// implementations -- see the plan's Task 2 Step 1 for the exact command.
+
+const SPARE_REGIONS = (() => {
+	const rl = new RegionList();
+	([[300, 600], [900, 1100], [1500, 1800], [2000, 2150]] as [number, number][])
+		.forEach(([a, b]) => rl.push(new Region(a, b)));
+	return rl;
+})();
+
+const GOLDEN: Record<string, [number, number][]> = {
+	RandomPolicy: [[1531,1541],[1783,1793],[2105,2115],[474,484],[982,992]],
+	StraightRandomPolicy: [[1531,1541],[1783,1793],[2105,2115],[1014,1024],[982,992]],
+	AllCornerRandomPolicy: [[1531,1541],[2105,2115],[319,329],[2067,2077],[482,492]],
+};
+
+const SPARE_POLICIES: [string, any][] = [
+	['RandomPolicy', RandomPolicy],
+	['StraightRandomPolicy', StraightRandomPolicy],
+	['AllCornerRandomPolicy', AllCornerRandomPolicy]
+];
+
+for (const [name, policy] of SPARE_POLICIES) {
+	test(`${name}: spares=0 reproduces the pre-SKL-21 output exactly`, () => {
+		const out = policy.sample(SPARE_REGIONS, 5, new Rule30CARng(20260910));
+		deepStrictEqual(out.map((r: Region) => [r.start, r.end]), GOLDEN[name]);
+	});
+
+	test(`${name}: omitting spares is the same as passing 0`, () => {
+		const implicit = policy.sample(SPARE_REGIONS, 5, new Rule30CARng(20260910));
+		const explicit = policy.sample(SPARE_REGIONS, 5, new Rule30CARng(20260910), 0);
+		deepStrictEqual(
+			implicit.map((r: Region) => [r.start, r.end]),
+			explicit.map((r: Region) => [r.start, r.end])
+		);
+	});
+
+	test(`${name}: spares=2 keeps every primary identical and adds a fixed-stride tail`, () => {
+		const base = policy.sample(SPARE_REGIONS, 5, new Rule30CARng(20260910));
+		const withSpares = policy.sample(SPARE_REGIONS, 5, new Rule30CARng(20260910), 2);
+		strictEqual(withSpares.length, 5 * 3, 'nsamples * (1 + spares) regions returned');
+		deepStrictEqual(
+			withSpares.slice(0, 5).map((r: Region) => [r.start, r.end]),
+			base.map((r: Region) => [r.start, r.end]),
+			'the primaries are untouched by asking for spares'
+		);
+	});
+
+	test(`${name}: each sample's spares strictly follow its primary`, () => {
+		const out = policy.sample(SPARE_REGIONS, 5, new Rule30CARng(20260910), 2);
+		for (let i = 0; i < 5; ++i) {
+			let prev = out[i].start;
+			for (let j = 0; j < 2; ++j) {
+				const spare = out[5 + i * 2 + j];
+				if (spare.end - spare.start === 0) continue;  // padding for "no spare available"
+				ok(spare.start > prev, `sample ${i} spare ${j} at ${spare.start} follows ${prev}`);
+				prev = spare.start;
+			}
+		}
+	});
+}

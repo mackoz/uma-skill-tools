@@ -2,7 +2,7 @@ import { Region, RegionList } from './Region';
 import { PRNG } from './Random';
 
 export interface ActivationSamplePolicy {
-	sample(regions: RegionList, nsamples: number, rng: PRNG): Region[]
+	sample(regions: RegionList, nsamples: number, rng: PRNG, spares?: number): Region[]
 
 	// essentially, when two conditions are combined with an AndOperator one should take precedence over the other
 	// immediate transitions into anything and straight_random/all_corner_random dominate everything except each other
@@ -29,20 +29,104 @@ export const ImmediatePolicy = Object.freeze({
 	reconcileAllCornerRandom(other: ActivationSamplePolicy) { return other; }
 });
 
+// SKL-21: shared by every policy that places candidate points one after another. Lifted verbatim
+// from AllCornerRandomPolicy.placeTriggers(), which already worked this way -- pick a point, shrink
+// the candidate list to what lies after it, repeat -- with the region-choice rule pulled out as a
+// parameter so the length-weighted (RandomPolicy) and uniform-per-region (straight/corner) variants
+// can share it. Callers requesting `count` points get at most `count`; a short return means the
+// regions ran out, which the callers pad.
+//
+// Split out of a single `placeSuccessive` loop into a one-step `placeOne` plus the loop, so that
+// RandomPolicy/StraightRandomPolicy.sample can run every sample's primary in one pass (an
+// unperturbed repeat of the pre-SKL-21 draw order, however large `spares` is) and only then spend
+// further draws on each sample's spares, continuing from that sample's own post-primary candidate
+// list. Drawing primary+spares together per sample, in nsamples order, would change how many RNG
+// draws land between one sample's primary and the next's as soon as `spares > 0`, shifting every
+// primary after the first -- AllCornerRandomPolicy avoids that because it always burns exactly 4
+// draws per sample regardless of `spares` (see its own comment below), but RandomPolicy and
+// StraightRandomPolicy have no such fixed draw count to hide behind.
+// ANCHOR: successive-trigger-placement
+function placeOne(
+	candidates: Region[],
+	rng: PRNG,
+	pickRegion: (candidates: Region[], rng: PRNG) => number
+): { trigger: Region, rest: Region[] } {
+	const ci = pickRegion(candidates, rng);
+	const c = candidates[ci];
+	const start = c.start + rng.uniform(c.end - c.start - 10);
+	const rest = candidates.slice();
+	// as each region's end cannot come after the start of the next, this keeps `rest` sorted
+	if (start + 20 <= c.end) {
+		rest.splice(ci, 1, new Region(start + 10, c.end));
+	} else {
+		rest.splice(ci, 1);
+	}
+	rest.splice(0, ci);  // everything before this region is guaranteed to be behind us
+	return { trigger: new Region(start, start + 10), rest };
+}
+
+function placeSuccessive(
+	regions: Region[],
+	rng: PRNG,
+	count: number,
+	pickRegion: (candidates: Region[], rng: PRNG) => number
+): Region[] {
+	const triggers: Region[] = [];
+	let candidates = regions.slice();
+	candidates.sort((a, b) => a.start - b.start);
+	while (triggers.length < count && candidates.length > 0) {
+		const { trigger, rest } = placeOne(candidates, rng, pickRegion);
+		triggers.push(trigger);
+		candidates = rest;
+	}
+	return triggers;
+}
+
+const pickUniform = (candidates: Region[], rng: PRNG) => rng.uniform(candidates.length);
+
+const pickLengthWeighted = (candidates: Region[], rng: PRNG) => {
+	let acc = 0;
+	const weights = candidates.map(r => acc += r.end - r.start);
+	const threshold = rng.uniform(acc);
+	return weights.findIndex(w => w > threshold);
+};
+
+// Pads a short spare list so the returned array keeps a fixed `nsamples * (1 + spares)` stride.
+// A zero-length region can never satisfy `pos >= trigger.start && pos < trigger.end`, so a padded
+// slot is inert in RaceSolver rather than firing at the course end.
+//
+// Two shapes of input reach this: AllCornerRandomPolicy hands it `placeTriggers()`'s full
+// primary+spares draw (trims off index 0, the primary, keeping at most `spares` of what follows);
+// RandomPolicy/StraightRandomPolicy hand it an already-spares-only list (nothing to trim, just pad
+// it out). `drop` says how many leading entries are the caller's own primary, not a spare.
+function padSpares(triggers: Region[], spares: number, end: number, drop: number = 1): Region[] {
+	const out = triggers.slice(drop, drop + spares);
+	while (out.length < spares) out.push(new Region(end, end));
+	return out;
+}
+
 export const RandomPolicy = Object.freeze({
-	sample(regions: RegionList, nsamples: number, rng: PRNG) {
+	// Primaries are drawn for every sample, in order, before any sample's spares are touched --
+	// see placeSuccessive's comment above for why that ordering is load-bearing.
+	sample(regions: RegionList, nsamples: number, rng: PRNG, spares: number = 0) {
 		if (regions.length == 0) {
 			return [];
 		}
-		let acc = 0;
-		const weights = regions.map(r => acc += r.end - r.start);
-		const samples = [];
+		const end = regions[regions.length - 1].end;
+		const sorted = regions.slice().sort((a, b) => a.start - b.start);
+		const primaries: Region[] = [];
+		const rests: Region[][] = [];
 		for (let i = 0; i < nsamples; ++i) {
-			const threshold = rng.uniform(acc);
-			const region = regions.find((_,i) => weights[i] > threshold)!;
-			samples.push(region.start + rng.uniform(region.end - region.start - 10));
+			const { trigger, rest } = placeOne(sorted, rng, pickLengthWeighted);
+			primaries.push(trigger);
+			rests.push(rest);
 		}
-		return samples.map(pos => new Region(pos, pos + 10));
+		const tail: Region[] = [];
+		for (let i = 0; i < nsamples; ++i) {
+			const spareTriggers = placeSuccessive(rests[i], rng, spares, pickLengthWeighted);
+			tail.push(...padSpares(spareTriggers, spares, end, 0));
+		}
+		return primaries.concat(tail);
 	},
 	reconcile(other: ActivationSamplePolicy) { return other.reconcileRandom(this); },
 	reconcileImmediate(_: ActivationSamplePolicy) { return this; },
@@ -236,18 +320,30 @@ export class ErlangRandomPolicy extends DistributionRandomPolicy {
 }
 
 export const StraightRandomPolicy = Object.freeze({
-	sample(regions: RegionList, nsamples: number, rng: PRNG) {
-		// regular RandomPolicy weights regions by their length, so any given point has an equal chance to be chosen across all regions
-		// StraightRandomPolicy first picks a region with equal chance regardless of length, and then picks a random point on that region
+	// regular RandomPolicy weights regions by their length, so any given point has an equal chance to be chosen across all regions
+	// StraightRandomPolicy first picks a region with equal chance regardless of length, and then picks a random point on that region
+	//
+	// Primaries are drawn for every sample, in order, before any sample's spares are touched --
+	// see placeSuccessive's comment above for why that ordering is load-bearing.
+	sample(regions: RegionList, nsamples: number, rng: PRNG, spares: number = 0) {
 		if (regions.length == 0) {
 			return [];
 		}
-		const samples = [];
+		const end = regions[regions.length - 1].end;
+		const sorted = regions.slice().sort((a, b) => a.start - b.start);
+		const primaries: Region[] = [];
+		const rests: Region[][] = [];
 		for (let i = 0; i < nsamples; ++i) {
-			const r = regions[rng.uniform(regions.length)];
-			samples.push(r.start + rng.uniform(r.end - r.start - 10));
+			const { trigger, rest } = placeOne(sorted, rng, pickUniform);
+			primaries.push(trigger);
+			rests.push(rest);
 		}
-		return samples.map(pos => new Region(pos, pos + 10));
+		const tail: Region[] = [];
+		for (let i = 0; i < nsamples; ++i) {
+			const spareTriggers = placeSuccessive(rests[i], rng, spares, pickUniform);
+			tail.push(...padSpares(spareTriggers, spares, end, 0));
+		}
+		return primaries.concat(tail);
 	},
 	reconcile(other: ActivationSamplePolicy) { return other.reconcileStraightRandom(this); },
 	reconcileImmediate(_: ActivationSamplePolicy) { return this; },
@@ -258,33 +354,24 @@ export const StraightRandomPolicy = Object.freeze({
 });
 
 export const AllCornerRandomPolicy = Object.freeze({
+	// NB. always four, regardless of how many are wanted. This policy has always burned four
+	// draws per sample and discarded the last three; keeping the draw count fixed is what makes
+	// corner skills without a cooldown bit-identical to their pre-SKL-21 results (SKL-21).
 	placeTriggers(regions: RegionList, rng: PRNG) {
-		const triggers = [];
-		const candidates = regions.slice();
-		candidates.sort((a,b) => a.start - b.start);
-		while (triggers.length < 4 && candidates.length > 0) {
-			const ci = rng.uniform(candidates.length);
-			const c = candidates[ci];
-			const start = c.start + rng.uniform(c.end - c.start - 10);
-			// note that as each corner's end cannot come after the start of the next corner, this maintains that the candidates
-			// are sorted by start
-			if (start + 20 <= c.end) {
-				candidates.splice(ci, 1, new Region(start + 10, c.end));
-			} else {
-				candidates.splice(ci, 1);
-			}
-			candidates.splice(0, ci);  // everything before this corner in the array is guaranteed to be before it in distance
-			triggers.push(start);
-		}
-		// TODO support multiple triggers for skills with cooldown
-		return new Region(triggers[0], triggers[0] + 10);  // guaranteed to be the earliest trigger since each trigger is placed after the last one
+		return placeSuccessive(regions, rng, 4, pickUniform);
 	},
-	sample(regions: RegionList, nsamples: number, rng: PRNG) {
-		const samples = [];
-		for (let i = 0; i < nsamples; ++i) {
-			samples.push(this.placeTriggers(regions, rng));
+	sample(regions: RegionList, nsamples: number, rng: PRNG, spares: number = 0) {
+		if (regions.length == 0) {
+			return [];
 		}
-		return samples;
+		const end = regions[regions.length - 1].end;
+		const primaries: Region[] = [], tail: Region[] = [];
+		for (let i = 0; i < nsamples; ++i) {
+			const placed = this.placeTriggers(regions, rng);
+			primaries.push(placed[0]);
+			tail.push(...padSpares(placed, spares, end));
+		}
+		return primaries.concat(tail);
 	},
 	reconcile(other: ActivationSamplePolicy) { return other.reconcileAllCornerRandom(this); },
 	reconcileImmediate(_: ActivationSamplePolicy) { return this; },
