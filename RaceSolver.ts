@@ -1584,10 +1584,16 @@ export class RaceSolver {
 			if (action == PendingAction.Activate) {
 				this.activateSkill(s);
 				if (s.cooldown != null) {
-					// SKL-21: reuse one timer per skill rather than allocating a fresh one per
-					// activation -- this.timers is walked every step.
-					if (s.cooldownTimer == null) s.cooldownTimer = this.getNewTimer(-s.cooldown);
-					else s.cooldownTimer.t = -s.cooldown;
+					// SKL-21: cooldown scales with course distance, same as skill duration just above
+					// in activateSkill() (RaceSolverBuilder.ts@base-duration-scaling) -- see
+					// plans/game-mechanics/skills.md's "Skill Cooldown" section: Cooldown =
+					// BaseCooldown * CourseDistance[m] / 1000. s.cooldown is the unscaled
+					// BaseCooldown (seconds, per make_skill_data.pl's cooldown_seconds()).
+					const scaledCooldown = s.cooldown * this.course.distance / 1000;
+					// reuse one timer per skill rather than allocating a fresh one per activation --
+					// this.timers is walked every step.
+					if (s.cooldownTimer == null) s.cooldownTimer = this.getNewTimer(-scaledCooldown);
+					else s.cooldownTimer.t = -scaledCooldown;
 					if (this.rearmSkill(s)) continue;
 				}
 			} else if (action == PendingAction.Rearm && this.rearmSkill(s)) {

@@ -3,7 +3,7 @@ import { CourseData, CourseHelpers, DistanceType } from './CourseData';
 import { Region, RegionList } from './Region';
 import { deriveSeed, Rule30CARng, SeededRng } from './Random';
 import { Conditions, random, immediate, noopRandom, noopImmediate } from './ActivationConditions';
-import { ActivationSamplePolicy, ImmediatePolicy } from './ActivationSamplePolicy';
+import { ActivationSamplePolicy, ImmediatePolicy, AllCornerRandomPolicy, DistributionRandomPolicy } from './ActivationSamplePolicy';
 import { getParser } from './ConditionParser';
 import { RaceSolver, RaceState, PendingSkill, DynamicCondition, SkillType, SkillTypeValues, SkillRarity, SkillEffect, Perspective, PosKeepMode } from './RaceSolver';
 import { Mood, GroundCondition, Weather, Season, Time, Grade, RaceParameters } from './RaceParameters';
@@ -253,6 +253,23 @@ export interface SkillData {
 	effects: SkillEffect[],
 	cooldown?: number
 	originWisdom?: number
+}
+
+// SKL-21. Whether a sample policy actually places more than one candidate trigger point, i.e.
+// whether requesting spares for it means anything. Per plans/condition-reference/conditions.md:
+// - `all_corner_random` (AllCornerRandomPolicy, :125) rolls FOUR points (one per corner) --
+//   multiple points exist for a short-cooldown skill to re-arm into.
+// - `straight_random` (StraightRandomPolicy, :1493) rolls a straight segment, then ONE point on
+//   it -- a single point, no matter how many straights the course has.
+// - `is_finalcorner_random` (RandomPolicy, :675) rolls ONE point on the (single) final corner.
+// - DistributionRandomPolicy and its subclasses (Uniform/LogNormal/Erlang) model conditions that
+//   are continuously re-evaluated in the real game, so they already place multiple independent
+//   candidates regardless of cooldown.
+// Requesting spares for a policy that only ever places one point would be a no-op at best (the
+// policy pads the request out with inert zero-length regions) and is excluded here so the spares
+// count documents something true about the policy, not just "harmless either way."
+function samplePolicyPlacesMultiplePoints(sp: ActivationSamplePolicy): boolean {
+	return sp === AllCornerRandomPolicy || sp instanceof DistributionRandomPolicy;
 }
 
 function isTarget(self: Perspective, targetType: SkillTarget) {
@@ -603,14 +620,21 @@ export class RaceSolverBuilder {
 				const triggerSeed = deriveSeed(baseSeed, `pacer-triggers:${slot}`);
 				const occurrences = new Map<string, number>();
 				// SKL-21: identical spares treatment to build()'s main sampling -- a cooldown skill on a
-				// pacemaker must be able to activate more than once too.
+				// pacemaker must be able to activate more than once too. SPARES=3 (+1 primary = 4
+				// candidates) matches all_corner_random's own four-point roll exactly -- see
+				// plans/condition-reference/conditions.md:125 ("randomly picks four points... if the
+				// skill in question has a short cooldown, there are multiple points where it can
+				// activate this way"). Only requested for policies that actually place more than one
+				// point (see samplePolicyPlacesMultiplePoints()) -- straight_random/is_finalcorner_random
+				// (conditions.md:1493/:675) each place exactly one point and so get 0 regardless of
+				// cooldown, matching their documented single-point behavior.
 				const SPARES = 3;
 				pacerTriggers = this._pacerSkillData.map(sd => {
 					const key = sd.perspective != null ? this.getSamplePolicyKey(sd.skillId, sd.perspective) : sd.skillId;
 					const occurrence = occurrences.get(key) || 0;
 					occurrences.set(key, occurrence + 1);
 					const sp = this._samplePolicyOverride.get(key) || sd.samplePolicy;
-					const spares = sd.cooldown != null ? SPARES : 0;
+					const spares = sd.cooldown != null && samplePolicyPlacesMultiplePoints(sp) ? SPARES : 0;
 					const flat = sp.sample(sd.regions, this.nsamples, new Rule30CARng(deriveSeed(triggerSeed, `${key}:${occurrence}`)), spares);
 					return {flat, spares};
 				});
@@ -889,16 +913,26 @@ export class RaceSolverBuilder {
 		const skilldata = this._skills.flatMap(({id,p,originWisdom}) => makeSkill(id, p, false, originWisdom));
 		this._extraSkillHooks.forEach(h => h(skilldata, horse, this._course));
 		const occurrences = new Map<string, number>();
-		// SKL-21: a cooldown skill gets 3 spare candidates -- the longest supported course is 3600m
-		// at roughly 145s, so a 30s cooldown admits at most four activations. Non-cooldown skills
-		// pass 0 and draw exactly what they always drew.
+		// SKL-21: a cooldown skill gets 3 spare candidates (+1 primary = 4 total) -- NOT a race-time
+		// guess, but the exact count all_corner_random's own policy already rolls. Per
+		// plans/condition-reference/conditions.md:125: "[all_corner_random] randomly picks four
+		// points (each time rolls a random corner, and then a random point on that corner). That
+		// means that if the skill in question has a short cooldown, there are multiple points where
+		// it can activate this way." Spares are only requested for a policy that actually places
+		// more than one such point (see samplePolicyPlacesMultiplePoints() above): AllCornerRandomPolicy
+		// and the DistributionRandomPolicy family (Uniform/LogNormal/Erlang -- continuously
+		// re-evaluated conditions, corroborated by 7 genuine re-triggers observed in real replays).
+		// straight_random and is_finalcorner_random (conditions.md:1493 and :675) each document
+		// placing exactly one point no matter the course, so they get 0 spares and can never re-arm,
+		// matching that documented single-point behavior. Non-cooldown skills pass 0 regardless and
+		// draw exactly what they always drew.
 		const SPARES = 3;
 		const triggers = skilldata.map(sd => {
 			const key = sd.perspective != null ? this.getSamplePolicyKey(sd.skillId, sd.perspective) : sd.skillId;
 			const occurrence = occurrences.get(key) || 0;
 			occurrences.set(key, occurrence + 1);
 			const sp = this._samplePolicyOverride.get(key) || sd.samplePolicy;
-			const spares = sd.cooldown != null ? SPARES : 0;
+			const spares = sd.cooldown != null && samplePolicyPlacesMultiplePoints(sp) ? SPARES : 0;
 			const flat = sp.sample(sd.regions, this.nsamples, new Rule30CARng(deriveSeed(skillTriggerSeed, `${key}:${occurrence}`)), spares);
 			return {flat, spares};
 		});
