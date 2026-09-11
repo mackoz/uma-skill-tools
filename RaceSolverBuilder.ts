@@ -3,7 +3,7 @@ import { CourseData, CourseHelpers, DistanceType } from './CourseData';
 import { Region, RegionList } from './Region';
 import { deriveSeed, Rule30CARng, SeededRng } from './Random';
 import { Conditions, random, immediate, noopRandom, noopImmediate } from './ActivationConditions';
-import { ActivationSamplePolicy, ImmediatePolicy } from './ActivationSamplePolicy';
+import { ActivationSamplePolicy, ImmediatePolicy, AllCornerRandomPolicy, DistributionRandomPolicy } from './ActivationSamplePolicy';
 import { getParser } from './ConditionParser';
 import { RaceSolver, RaceState, PendingSkill, DynamicCondition, SkillType, SkillTypeValues, SkillRarity, SkillEffect, Perspective, PosKeepMode } from './RaceSolver';
 import { Mood, GroundCondition, Weather, Season, Time, Grade, RaceParameters } from './RaceParameters';
@@ -251,7 +251,31 @@ export interface SkillData {
 	regions: RegionList,
 	extraCondition: DynamicCondition,
 	effects: SkillEffect[],
+	cooldown?: number
 	originWisdom?: number
+}
+
+// SKL-21. Whether a sample policy actually places more than one candidate trigger point, i.e.
+// whether requesting spares for it means anything. Per plans/condition-reference/conditions.md:
+// - `all_corner_random` (AllCornerRandomPolicy, :125) rolls FOUR points total, not necessarily one
+//   per corner -- `placeSuccessive` can place two points in the same corner, and conditions.md:125
+//   itself says the game re-rolls a random corner (with replacement) each time too. Either way,
+//   multiple points exist for a short-cooldown skill to re-arm into.
+// - `straight_random` (StraightRandomPolicy, :1493) rolls a straight segment, then ONE point on
+//   it -- a single point, no matter how many straights the course has.
+// - `is_finalcorner_random` (RandomPolicy, :675) rolls ONE point on the (single) final corner.
+// - DistributionRandomPolicy and its subclasses (Uniform/LogNormal/Erlang) model conditions that
+//   are continuously re-evaluated in the real game; unlike the other three, requesting spares for
+//   them is NOT a no-op "regardless of cooldown" -- sample() draws nsamples*(1+spares) and returns
+//   early when spares==0, so the candidate count is exactly a function of the spares requested.
+//   They keep spares because real replays show 7 genuine re-triggers in that family (see
+//   tools/replay/cooldownReport.ts and the :923 comment below), not because the policy would place
+//   multiple points unconditionally either way.
+// Requesting spares for a policy that only ever places one point would be a no-op at best (the
+// policy pads the request out with inert zero-length regions) and is excluded here so the spares
+// count documents something true about the policy, not just "harmless either way."
+function samplePolicyPlacesMultiplePoints(sp: ActivationSamplePolicy): boolean {
+	return sp === AllCornerRandomPolicy || sp instanceof DistributionRandomPolicy;
 }
 
 function isTarget(self: Perspective, targetType: SkillTarget) {
@@ -320,6 +344,7 @@ export function buildSkillData(horse: HorseParameters, raceParams: PartialRacePa
 				regions: regions,
 				extraCondition: extraCondition,
 				effects: effects,
+				cooldown: skill.cooldown,
 				originWisdom: originWisdom
 			});
 		}
@@ -421,7 +446,7 @@ export class RaceSolverBuilder {
 	_pacerSkillIds: string[]
 	_pacerSpeedUpRate: number
 	_pacerSkillData: SkillData[];
-	_pacerTriggersBySlot: Region[][][];
+	_pacerTriggersBySlot: {flat: Region[], spares: number}[][];
 	_rng: SeededRng
 	_seed: number
 	_parser: {parse: any, tokenize: any}
@@ -595,17 +620,29 @@ export class RaceSolverBuilder {
 		this._pacerTriggersBySlot = [];
 
 		for (let slot = 0; slot < pacerSlots; ++slot) {
-			let pacerTriggers: Region[][] = [];
+			let pacerTriggers: {flat: Region[], spares: number}[] = [];
 
 			if (this._pacerSkillIds.length > 0) {
 				const triggerSeed = deriveSeed(baseSeed, `pacer-triggers:${slot}`);
 				const occurrences = new Map<string, number>();
+				// SKL-21: identical spares treatment to build()'s main sampling -- a cooldown skill on a
+				// pacemaker must be able to activate more than once too. SPARES=3 (+1 primary = 4
+				// candidates) matches all_corner_random's own four-point roll exactly -- see
+				// plans/condition-reference/conditions.md:125 ("randomly picks four points... if the
+				// skill in question has a short cooldown, there are multiple points where it can
+				// activate this way"). Only requested for policies that actually place more than one
+				// point (see samplePolicyPlacesMultiplePoints()) -- straight_random/is_finalcorner_random
+				// (conditions.md:1493/:675) each place exactly one point and so get 0 regardless of
+				// cooldown, matching their documented single-point behavior.
+				const SPARES = 3;
 				pacerTriggers = this._pacerSkillData.map(sd => {
 					const key = sd.perspective != null ? this.getSamplePolicyKey(sd.skillId, sd.perspective) : sd.skillId;
 					const occurrence = occurrences.get(key) || 0;
 					occurrences.set(key, occurrence + 1);
 					const sp = this._samplePolicyOverride.get(key) || sd.samplePolicy;
-					return sp.sample(sd.regions, this.nsamples, new Rule30CARng(deriveSeed(triggerSeed, `${key}:${occurrence}`)));
+					const spares = sd.cooldown != null && samplePolicyPlacesMultiplePoints(sp) ? SPARES : 0;
+					const flat = sp.sample(sd.regions, this.nsamples, new Rule30CARng(deriveSeed(triggerSeed, `${key}:${occurrence}`)), spares);
+					return {flat, spares};
 				});
 			}
 
@@ -617,14 +654,21 @@ export class RaceSolverBuilder {
 		const pacerTriggers = this._pacerTriggersBySlot[slot] || [];
 
 		const pacerSkills = this._pacerSkillData.length > 0
-			? this._pacerSkillData.map((sd, sdi) => ({
-				skillId: sd.skillId,
-				perspective: sd.perspective,
-				rarity: sd.rarity,
-				trigger: pacerTriggers[sdi][i % pacerTriggers[sdi].length],
-				extraCondition: sd.extraCondition,
-				effects: sd.effects
-			}))
+			? this._pacerSkillData.map((sd, sdi) => {
+				const {flat, spares} = pacerTriggers[sdi];
+				const n = flat.length / (1 + spares);
+				const si = i % n;
+				return {
+					skillId: sd.skillId,
+					perspective: sd.perspective,
+					rarity: sd.rarity,
+					trigger: flat[si],
+					extraCondition: sd.extraCondition,
+					effects: sd.effects,
+					cooldown: sd.cooldown,
+					spares: spares > 0 ? flat.slice(n + si * spares, n + (si + 1) * spares) : undefined
+				};
+			})
 			: this._pacerSkills;
 
 		return pacerHorse ? new RaceSolver({
@@ -836,7 +880,12 @@ export class RaceSolverBuilder {
 		clone._course = this._course;
 		clone._raceParams = Object.assign({}, this._raceParams);
 		clone._horse = this._horse;
-		clone._pacerSkills = this._pacerSkills.slice();  // sharing the skill objects is fine but see the note below
+		// SKL-21: sharing the skill objects (rather than deep-cloning them) is fine only because the
+		// two hardcoded entries this builds (see setupPacer()) carry no cooldown and so are never
+		// passed to rearmSkill(), which now mutates a PendingSkill's `.trigger`/`.spares` in place.
+		// A pacer skill that ever gained a cooldown would have its clone and original share (and
+		// corrupt) the same mutable spares array across forked builders.
+		clone._pacerSkills = this._pacerSkills.slice();
 		clone._pacerSkillIds = this._pacerSkillIds.slice();
 		clone._pacerSpeedUpRate = this._pacerSpeedUpRate;
 		clone._pacerSkillData = this._pacerSkillData.slice();
@@ -875,12 +924,30 @@ export class RaceSolverBuilder {
 		const skilldata = this._skills.flatMap(({id,p,originWisdom}) => makeSkill(id, p, false, originWisdom));
 		this._extraSkillHooks.forEach(h => h(skilldata, horse, this._course));
 		const occurrences = new Map<string, number>();
+		// SKL-21: a cooldown skill gets 3 spare candidates (+1 primary = 4 total) -- NOT a race-time
+		// guess, but the exact count all_corner_random's own policy already rolls. Per
+		// plans/condition-reference/conditions.md:125: "[all_corner_random] randomly picks four
+		// points (each time rolls a random corner, and then a random point on that corner). That
+		// means that if the skill in question has a short cooldown, there are multiple points where
+		// it can activate this way." Spares are only requested for a policy that actually places
+		// more than one such point (see samplePolicyPlacesMultiplePoints() above): AllCornerRandomPolicy
+		// and the DistributionRandomPolicy family (Uniform/LogNormal/Erlang -- continuously
+		// re-evaluated conditions, corroborated by 7 genuine re-triggers observed in real replays).
+		// straight_random and is_finalcorner_random (conditions.md:1493 and :675) each document
+		// placing exactly one point no matter the course, so they get 0 spares and can never re-arm,
+		// matching that documented single-point behavior. Non-cooldown skills pass 0 regardless and
+		// draw exactly what they always drew. (Duplicated at :631 for the pacer path --
+		// prepPacerTriggers() -- with the same value and the same rationale.)
+		// ANCHOR: skl-21-spares-count
+		const SPARES = 3;
 		const triggers = skilldata.map(sd => {
 			const key = sd.perspective != null ? this.getSamplePolicyKey(sd.skillId, sd.perspective) : sd.skillId;
 			const occurrence = occurrences.get(key) || 0;
 			occurrences.set(key, occurrence + 1);
 			const sp = this._samplePolicyOverride.get(key) || sd.samplePolicy;
-			return sp.sample(sd.regions, this.nsamples, new Rule30CARng(deriveSeed(skillTriggerSeed, `${key}:${occurrence}`)))
+			const spares = sd.cooldown != null && samplePolicyPlacesMultiplePoints(sp) ? SPARES : 0;
+			const flat = sp.sample(sd.regions, this.nsamples, new Rule30CARng(deriveSeed(skillTriggerSeed, `${key}:${occurrence}`)), spares);
+			return {flat, spares};
 		});
 
 		// must come after skill activations are decided because conditions like base_power depend on base stats
@@ -889,15 +956,22 @@ export class RaceSolverBuilder {
 		for (let i = 0; i < this.nsamples; ++i) {
 			let solverRng = new Rule30CARng(this._rng.int32());
 
-			const skills = skilldata.map((sd,sdi) => ({
-				skillId: sd.skillId,
-				perspective: sd.perspective,
-				rarity: sd.rarity,
-				trigger: triggers[sdi][i % triggers[sdi].length],
-				extraCondition: sd.extraCondition,
-				effects: sd.effects,
-				originWisdom: sd.originWisdom
-			}));
+			const skills = skilldata.map((sd, sdi) => {
+				const {flat, spares} = triggers[sdi];
+				const n = flat.length / (1 + spares);
+				const si = i % n;
+				return {
+					skillId: sd.skillId,
+					perspective: sd.perspective,
+					rarity: sd.rarity,
+					trigger: flat[si],
+					extraCondition: sd.extraCondition,
+					effects: sd.effects,
+					originWisdom: sd.originWisdom,
+					cooldown: sd.cooldown,
+					spares: spares > 0 ? flat.slice(n + si * spares, n + (si + 1) * spares) : undefined
+				};
+			});
 
 			const hpRng = new Rule30CARng(this._rng.int32());
 			const hpPolicy = this._mode === 'compare' ? new GameHpPolicy(this._course, this._raceParams.groundCondition, hpRng) : NoopHpPolicy;

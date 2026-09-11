@@ -1,6 +1,6 @@
 import { test } from 'vitest';
 import { strictEqual, notStrictEqual, ok, deepStrictEqual } from 'node:assert/strict';
-import { DistributionRandomPolicy, ErlangRandomPolicy, LogNormalRandomPolicy } from '../ActivationSamplePolicy';
+import { DistributionRandomPolicy, ErlangRandomPolicy, LogNormalRandomPolicy, RandomPolicy, StraightRandomPolicy, AllCornerRandomPolicy, createFixedPositionPolicy } from '../ActivationSamplePolicy';
 import { Region, RegionList } from '../Region';
 import { deriveSeed, PRNG, Rule30CARng } from '../Random';
 import courses from '../data/jp/course_data.json';
@@ -173,4 +173,139 @@ test('interior offsets are unaffected by the bounds fix', () => {
 	}
 
 	deepStrictEqual(mismatches.slice(0, 3), [], `all 500 interior offsets map to the same position as before (${mismatches.length} did not)`);
+});
+
+// SKL-21: sample() gained a `spares` argument so cooldown skills can be handed more than one
+// candidate trigger. The contract that matters most is the *absence* of change: at spares=0 every
+// policy must draw exactly the RNG values it drew before, in the same order, so that skills
+// without a cooldown produce bit-identical races. GOLDEN was captured by running the pre-SKL-21
+// implementations -- see the plan's Task 2 Step 1 for the exact command.
+
+const SPARE_REGIONS = (() => {
+	const rl = new RegionList();
+	([[300, 600], [900, 1100], [1500, 1800], [2000, 2150]] as [number, number][])
+		.forEach(([a, b]) => rl.push(new Region(a, b)));
+	return rl;
+})();
+
+const GOLDEN: Record<string, [number, number][]> = {
+	RandomPolicy: [[1531,1541],[1783,1793],[2105,2115],[474,484],[982,992]],
+	StraightRandomPolicy: [[1531,1541],[1783,1793],[2105,2115],[1014,1024],[982,992]],
+	AllCornerRandomPolicy: [[1531,1541],[2105,2115],[319,329],[2067,2077],[482,492]],
+};
+
+const SPARE_POLICIES: [string, any][] = [
+	['RandomPolicy', RandomPolicy],
+	['StraightRandomPolicy', StraightRandomPolicy],
+	['AllCornerRandomPolicy', AllCornerRandomPolicy]
+];
+
+for (const [name, policy] of SPARE_POLICIES) {
+	test(`${name}: spares=0 reproduces the pre-SKL-21 output exactly`, () => {
+		const out = policy.sample(SPARE_REGIONS, 5, new Rule30CARng(20260910));
+		deepStrictEqual(out.map((r: Region) => [r.start, r.end]), GOLDEN[name]);
+	});
+
+	test(`${name}: omitting spares is the same as passing 0`, () => {
+		const implicit = policy.sample(SPARE_REGIONS, 5, new Rule30CARng(20260910));
+		const explicit = policy.sample(SPARE_REGIONS, 5, new Rule30CARng(20260910), 0);
+		deepStrictEqual(
+			implicit.map((r: Region) => [r.start, r.end]),
+			explicit.map((r: Region) => [r.start, r.end])
+		);
+	});
+
+	test(`${name}: spares=2 keeps every primary identical and adds a fixed-stride tail`, () => {
+		const base = policy.sample(SPARE_REGIONS, 5, new Rule30CARng(20260910));
+		const withSpares = policy.sample(SPARE_REGIONS, 5, new Rule30CARng(20260910), 2);
+		strictEqual(withSpares.length, 5 * 3, 'nsamples * (1 + spares) regions returned');
+		deepStrictEqual(
+			withSpares.slice(0, 5).map((r: Region) => [r.start, r.end]),
+			base.map((r: Region) => [r.start, r.end]),
+			'the primaries are untouched by asking for spares'
+		);
+	});
+
+	test(`${name}: each sample's spares strictly follow its primary`, () => {
+		const out = policy.sample(SPARE_REGIONS, 5, new Rule30CARng(20260910), 2);
+		for (let i = 0; i < 5; ++i) {
+			let prev = out[i].start;
+			for (let j = 0; j < 2; ++j) {
+				const spare = out[5 + i * 2 + j];
+				if (spare.end - spare.start === 0) continue;  // padding for "no spare available"
+				ok(spare.start > prev, `sample ${i} spare ${j} at ${spare.start} follows ${prev}`);
+				prev = spare.start;
+			}
+		}
+	});
+}
+
+// SKL-21: the distribution policies get spares too -- 30 of the 58 cooldown skills use them, and
+// they are the only family the replay corpus has ever caught re-triggering. Their primaries must
+// stay identical because distribution() is prefix-stable (pinned by the tests above), so drawing a
+// longer batch cannot disturb the first nsamples values.
+test('ErlangRandomPolicy: spares=2 preserves primaries and orders spares after them', () => {
+	const policy = new ErlangRandomPolicy(3, 2.0);
+	const base = policy.sample(SPARE_REGIONS, 4, new Rule30CARng(777));
+	const withSpares = policy.sample(SPARE_REGIONS, 4, new Rule30CARng(777), 2);
+	strictEqual(withSpares.length, 4 * 3);
+	deepStrictEqual(
+		withSpares.slice(0, 4).map(r => [r.start, r.end]),
+		base.map(r => [r.start, r.end]),
+		'primaries unchanged by requesting spares'
+	);
+	for (let i = 0; i < 4; ++i) {
+		let prev = withSpares[i].start;
+		for (let j = 0; j < 2; ++j) {
+			const spare = withSpares[4 + i * 2 + j];
+			if (spare.end - spare.start === 0) continue;
+			ok(spare.start > prev, `sample ${i} spare ${j} follows the previous point`);
+			prev = spare.start;
+		}
+	}
+});
+
+test('ErlangRandomPolicy: spares=0 is unchanged from omitting it', () => {
+	const policy = new ErlangRandomPolicy(3, 2.0);
+	const implicit = policy.sample(SPARE_REGIONS, 4, new Rule30CARng(4242));
+	const explicit = policy.sample(SPARE_REGIONS, 4, new Rule30CARng(4242), 0);
+	deepStrictEqual(
+		implicit.map(r => [r.start, r.end]),
+		explicit.map(r => [r.start, r.end])
+	);
+});
+
+// SKL-21 fix-report finding: createFixedPositionPolicy is used only by tools/replay/replayDiff.ts
+// via addSkillAtPosition's _samplePolicyOverride, but that path is exactly what Task 6 builds on,
+// and the replay corpus is dense with cooldown-bearing skills. It must satisfy the
+// nsamples * (1 + spares) layout contract or build()'s `n = flat.length / (1 + spares)` goes
+// fractional and the indexing breaks. A pinned position means "fire exactly here" and must never
+// re-arm, so every spare is a zero-length region -- permanently inert, since a zero-length region
+// can never satisfy `pos >= trigger.start && pos < trigger.end`.
+test('createFixedPositionPolicy: spares=2 returns nsamples * (1 + spares) regions, all-inert spares', () => {
+	const policy = createFixedPositionPolicy(1234);
+	const nsamples = 5;
+	const spares = 2;
+	const out = policy.sample(SPARE_REGIONS, nsamples, new Rule30CARng(20260910), spares);
+	strictEqual(out.length, nsamples * (1 + spares), 'nsamples * (1 + spares) regions returned');
+
+	const primaries = out.slice(0, nsamples);
+	ok(primaries.every(r => r.start === 1234 && r.end === 1244), 'every primary is pinned at the fixed position');
+
+	for (let i = 0; i < nsamples; ++i) {
+		for (let j = 0; j < spares; ++j) {
+			const spare = out[nsamples + i * spares + j];
+			strictEqual(spare.end - spare.start, 0, `sample ${i} spare ${j} is zero-length`);
+		}
+	}
+});
+
+test('createFixedPositionPolicy: spares=0 is unchanged from omitting it', () => {
+	const policy = createFixedPositionPolicy(1234);
+	const implicit = policy.sample(SPARE_REGIONS, 5, new Rule30CARng(20260910));
+	const explicit = policy.sample(SPARE_REGIONS, 5, new Rule30CARng(20260910), 0);
+	deepStrictEqual(
+		implicit.map((r: Region) => [r.start, r.end]),
+		explicit.map((r: Region) => [r.start, r.end])
+	);
 });

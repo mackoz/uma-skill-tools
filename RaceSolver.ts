@@ -148,6 +148,14 @@ export const enum Perspective {
 	Any = 3
 }
 
+// SKL-21
+export const enum PendingAction {
+	Wait = 0,
+	Activate = 1,
+	Rearm = 2,
+	Remove = 3
+}
+
 export const enum SkillType {
 	Noop = 0,
 	SpeedUp = 1,
@@ -237,6 +245,12 @@ export interface PendingSkill {
 	extraCondition: DynamicCondition
 	effects: SkillEffect[]
 	originWisdom?: number
+	// SKL-21. Present only for skills master.mdb gives a real cooldown. `spares` are further
+	// candidate trigger points, each after the one before it; the solver advances into them after
+	// an activation instead of dropping the skill. Seconds, not distance-scaled.
+	cooldown?: number
+	spares?: Region[]
+	cooldownTimer?: Timer
 }
 
 interface ActiveSkill {
@@ -1565,26 +1579,86 @@ export class RaceSolver {
 		}
 		for (let i = this.pendingSkills.length; --i >= 0;) {
 			const s = this.pendingSkills[i];
-			if (this.pos >= s.trigger.end || this.pendingRemoval.has(s.skillId)) {  // NB. `Region`s are half-open [start,end) intervals. If pos == end we are out of the trigger.
-				// skill failed to activate
-				this.pendingSkills.splice(i,1);
-				this.pendingRemoval.delete(s.skillId);
-			} else if (this.pos >= s.trigger.start && s.extraCondition(this)) {
-				// Check wisdom for skill activation if enabled
-				if (!this.shouldSkipWisdomCheck(s) && !this.checkWisdomForSkill(s)) {
-					// Skill fails due to low wisdom
-					this.pendingSkills.splice(i,1);
-				} else {
-					this.activateSkill(s);
-					this.pendingSkills.splice(i,1);
+			const action = this.pendingSkillAction(s);
+			if (action == PendingAction.Wait) continue;
+			if (action == PendingAction.Activate) {
+				this.activateSkill(s);
+				if (s.cooldown != null) {
+					// SKL-21: cooldown scales with course distance, same as skill duration just above
+					// in activateSkill() (RaceSolverBuilder.ts@base-duration-scaling) -- see
+					// plans/game-mechanics/skills.md's "Skill Cooldown" section: Cooldown =
+					// BaseCooldown * CourseDistance[m] / 1000. s.cooldown is the unscaled
+					// BaseCooldown (seconds, per make_skill_data.pl's cooldown_seconds()).
+					const scaledCooldown = s.cooldown * this.course.distance / 1000;
+					// reuse one timer per skill rather than allocating a fresh one per activation --
+					// this.timers is walked every step.
+					if (s.cooldownTimer == null) s.cooldownTimer = this.getNewTimer(-scaledCooldown);
+					else s.cooldownTimer.t = -scaledCooldown;
+					if (this.rearmSkill(s)) continue;
 				}
+			} else if (action == PendingAction.Rearm && this.rearmSkill(s)) {
+				continue;
 			}
+			this.pendingSkills.splice(i, 1);
+			// SKL-21. Unconditional, but a no-op except for the pendingRemoval-triggered Remove
+			// branch above (where it correctly clears the flag this same entry was just matched
+			// against). For the Activate and wisdom-fail-Remove branches, this only deletes
+			// something real if THIS entry's own skillId got added to pendingRemoval mid-iteration --
+			// which only doActivateRandomGold's re-entrant activateSkill() can do, and only for a
+			// Gold/Evolution skill whose own effects satisfy its candidate filter (every effect type
+			// > WisdomUp) while also carrying an ActivateRandomGold (type 37) effect that re-picks
+			// this same entry. No skill in the current data combines those, so it's a no-op today;
+			// it stops being one the day a gold skill's own effects include type 37.
+			this.pendingRemoval.delete(s.skillId);
 		}
 		// activateSkill() (called above, possibly re-entrantly via doActivateRandomGold) bumped
 		// activateCountThisFrame; is_activate_any_skill reads *last* frame's count, one frame delayed,
 		// same as every other phase-check-before-phase-update timing quirk in this engine.
 		this.activateCountLastFrame = this.activateCountThisFrame;
 		this.activateCountThisFrame = 0;
+	}
+
+	// SKL-21. Decides what happens to one pending skill this frame. Split out of
+	// processSkillActivations()'s loop so the cooldown rules are unit-testable without standing up
+	// a whole race. Ordering matters in two places: pendingRemoval wins over everything, and the
+	// cooldown check comes *before* the wisdom check. That is NOT because checkWisdomForSkill()
+	// "consumes" a roll -- it builds a throwaway seeded PRNG and mutates nothing, so checking it
+	// first wouldn't cost anything by itself. The real reason: a failed wisdom roll returns Remove,
+	// which discards every remaining spare (see rearmSkill() below). Checking wisdom before cooldown
+	// would mean a candidate the skill was never actually eligible to fire on (because it's still
+	// cooling down) could fail a wisdom roll and throw away the skill's future activations entirely.
+	// Checking cooldown first means a still-cooling candidate is skipped via Rearm -- onto the next
+	// spare, wisdom unexamined -- instead of being judged (and potentially killed) on a roll that
+	// was never going to fire anyway.
+	pendingSkillAction(s: PendingSkill): PendingAction {
+		if (this.pendingRemoval.has(s.skillId)) return PendingAction.Remove;
+		// NB. `Region`s are half-open [start,end): if pos == end we are out of the trigger.
+		if (this.pos >= s.trigger.end) {
+			// A skill that has never fired keeps the old behavior -- a missed window is fatal. Spares
+			// exist to model re-triggering, not to give first activations extra chances. And a skill
+			// that HAS fired but has no spare left to advance into is equally done -- only report
+			// Rearm when a spare actually exists, so a caller driving this method directly (e.g. a
+			// unit test, or a future refactor that doesn't also call rearmSkill()) doesn't need to
+			// separately re-derive "but is there actually anything to rearm into?".
+			return (s.cooldownTimer != null && s.spares != null && s.spares.length > 0) ? PendingAction.Rearm : PendingAction.Remove;
+		}
+		if (!(this.pos >= s.trigger.start && s.extraCondition(this))) return PendingAction.Wait;
+		if (s.cooldownTimer != null && s.cooldownTimer.t < 0) {
+			// Same "only report Rearm when a spare actually exists" contract as the trigger.end
+			// branch above -- a still-cooling candidate with no spare left is simply done, not a
+			// reason to fall through to the wisdom check and a possible Activate.
+			return (s.spares != null && s.spares.length > 0) ? PendingAction.Rearm : PendingAction.Remove;
+		}
+		if (!this.shouldSkipWisdomCheck(s) && !this.checkWisdomForSkill(s)) return PendingAction.Remove;
+		return PendingAction.Activate;
+	}
+
+	// SKL-21. Moves the next spare candidate into `trigger`. Returns false when none is left, which
+	// is the caller's signal to drop the skill.
+	rearmSkill(s: PendingSkill): boolean {
+		if (s.spares == null || s.spares.length == 0) return false;
+		s.trigger = s.spares.shift()!;
+		return true;
 	}
 
 	checkWisdomForSkill(skill: PendingSkill): boolean {
@@ -1748,8 +1822,19 @@ export class RaceSolver {
 	}
 
 	doActivateRandomGold(ngolds: number) {
+		// SKL-21: a skill still cooling down (cooldownTimer set and not yet expired) must not be
+		// selectable here. Before cooldowns existed, activateSkill() always implied immediate
+		// removal from pendingSkills (via the loop in processSkillActivations), so a skill could
+		// never be picked by doActivateRandomGold twice. Now a cooldown skill survives its own
+		// activation and stays in pendingSkills, so without this guard a still-cooling entry could
+		// be force-activated again moments after its real activation (observed: two activations of
+		// the same skill ~0.07s apart with ~30s of cooldown left). We exclude rather than reset the
+		// timer on a forced pick -- resetting it would let a forced activation extend a cooldown,
+		// which is strictly worse than just leaving the entry ineligible until it naturally expires.
 		const goldIndices = this.pendingSkills.reduce((acc, skill, i) => {
-			if ((skill.rarity == SkillRarity.Gold || skill.rarity == SkillRarity.Evolution) && skill.effects.every(ef => ef.type > SkillType.WisdomUp)) acc.push(i);
+			if ((skill.rarity == SkillRarity.Gold || skill.rarity == SkillRarity.Evolution) &&
+				skill.effects.every(ef => ef.type > SkillType.WisdomUp) &&
+				!(skill.cooldownTimer != null && skill.cooldownTimer.t < 0)) acc.push(i);
 			return acc;
 		}, []);
 		for (let i = goldIndices.length; --i >= 0;) {
