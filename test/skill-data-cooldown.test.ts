@@ -18,19 +18,11 @@ function cooldowns(data: any): number[] {
 	return out;
 }
 
-// The on-disk Global master.mdb predates the committed data/global/skill_data.json (which was
-// last regenerated 2026-09-09 by SKL-7 from an mdb no longer on disk): regenerating Global from
-// today's mdb would delete 45 released skills the committed JSON still has. So the existence
-// check below only runs for JP; the Global half is a todo until a current master.mdb shows up
-// (see SKL-21). The two invariant tests still run over both datasets -- they hold vacuously for
-// Global today, which is fine for an invariant.
-test('jp: some alternatives carry a cooldown', () => {
-	ok(cooldowns(jp).length > 0, 'at least one alternative has a cooldown field');
-});
-
-test.todo('global: some alternatives carry a cooldown -- blocked on a current master.mdb, see SKL-21');
-
 for (const [label, data] of [['jp', jp], ['global', global]] as [string, any][]) {
+	test(`${label}: some alternatives carry a cooldown`, () => {
+		ok(cooldowns(data).length > 0, 'at least one alternative has a cooldown field');
+	});
+
 	test(`${label}: every cooldown is a positive finite number of seconds`, () => {
 		for (const cd of cooldowns(data)) {
 			ok(Number.isFinite(cd) && cd > 0, `cooldown ${cd} is positive and finite`);
