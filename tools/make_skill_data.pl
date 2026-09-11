@@ -40,13 +40,13 @@ sub patch_modifier {
 my $select = $db->prepare(<<SQL
 SELECT id, rarity,
        precondition_1, condition_1,
-       float_ability_time_1, ability_time_usage_1,
+       float_ability_time_1, ability_time_usage_1, float_cooldown_time_1,
        ability_type_1_1, float_ability_value_1_1, target_type_1_1, ability_value_usage_1_1,
        ability_type_1_2, float_ability_value_1_2, target_type_1_2, ability_value_usage_1_2,
        ability_type_1_3, float_ability_value_1_3, target_type_1_3, ability_value_usage_1_3,
 
        precondition_2, condition_2,
-       float_ability_time_2, ability_time_usage_2,
+       float_ability_time_2, ability_time_usage_2, float_cooldown_time_2,
        ability_type_2_1, float_ability_value_2_1, target_type_2_1, ability_value_usage_2_1,
        ability_type_2_2, float_ability_value_2_2, target_type_2_2, ability_value_usage_2_2,
        ability_type_2_3, float_ability_value_2_3, target_type_2_3, ability_value_usage_2_3
@@ -60,13 +60,13 @@ $select->execute;
 my (
 	$id, $rarity,
 	$precondition_1, $condition_1,
-	$float_ability_time_1, $ability_time_usage_1,
+	$float_ability_time_1, $ability_time_usage_1, $float_cooldown_time_1,
 	$ability_type_1_1, $float_ability_value_1_1, $target_type_1_1, $ability_value_usage_1_1,
 	$ability_type_1_2, $float_ability_value_1_2, $target_type_1_2, $ability_value_usage_1_2,
 	$ability_type_1_3, $float_ability_value_1_3, $target_type_1_3, $ability_value_usage_1_3,
 
 	$precondition_2, $condition_2,
-	$float_ability_time_2, $ability_time_usage_2,
+	$float_ability_time_2, $ability_time_usage_2, $float_cooldown_time_2,
 	$ability_type_2_1, $float_ability_value_2_1, $target_type_2_1, $ability_value_usage_2_1,
 	$ability_type_2_2, $float_ability_value_2_2, $target_type_2_2, $ability_value_usage_2_2,
 	$ability_type_2_3, $float_ability_value_2_3, $target_type_2_3, $ability_value_usage_2_3
@@ -75,17 +75,26 @@ my (
 $select->bind_columns(\(
 	$id, $rarity,
 	$precondition_1, $condition_1,
-	$float_ability_time_1, $ability_time_usage_1,
+	$float_ability_time_1, $ability_time_usage_1, $float_cooldown_time_1,
 	$ability_type_1_1, $float_ability_value_1_1, $target_type_1_1, $ability_value_usage_1_1,
 	$ability_type_1_2, $float_ability_value_1_2, $target_type_1_2, $ability_value_usage_1_2,
 	$ability_type_1_3, $float_ability_value_1_3, $target_type_1_3, $ability_value_usage_1_3,
 
 	$precondition_2, $condition_2,
-	$float_ability_time_2, $ability_time_usage_2,
+	$float_ability_time_2, $ability_time_usage_2, $float_cooldown_time_2,
 	$ability_type_2_1, $float_ability_value_2_1, $target_type_2_1, $ability_value_usage_2_1,
 	$ability_type_2_2, $float_ability_value_2_2, $target_type_2_2, $ability_value_usage_2_2,
 	$ability_type_2_3, $float_ability_value_2_3, $target_type_2_3, $ability_value_usage_2_3
 ));
+
+# master.mdb uses 5000000 as "never re-trigger" and 0 for passives (float_ability_time_1 = -1).
+# Both mean "no cooldown", so neither is written; a present `cooldown` field means the alternative
+# can genuinely re-trigger. Scaling matches float_ability_time_*: /10000 gives seconds.
+sub cooldown_seconds {
+	my ($raw) = @_;
+	return undef if !defined($raw) || $raw <= 0 || $raw >= 1000000;
+	return $raw / 10000;
+}
 
 my $skills = {};
 while ($select->fetch) {
@@ -103,6 +112,8 @@ while ($select->fetch) {
 		timeUsage => $ability_time_usage_1,
 		effects => \@effects_1
 	});
+	my $cd1 = cooldown_seconds($float_cooldown_time_1);
+	$triggers[0]{cooldown} = $cd1 if defined $cd1;
 	if ($condition_2 ne '' && $condition_2 ne '0') {
 		my @effects_2 = ({type => $ability_type_2_1, modifier => patch_modifier($id, $float_ability_value_2_1), target => $target_type_2_1, valueUsage => $ability_value_usage_2_1});
 		if ($ability_type_2_2 != 0) {
@@ -118,6 +129,8 @@ while ($select->fetch) {
 			timeUsage => $ability_time_usage_2,
 			effects => \@effects_2
 		};
+		my $cd2 = cooldown_seconds($float_cooldown_time_2);
+		$triggers[$#triggers]{cooldown} = $cd2 if defined $cd2;
 	}
 	$skills->{$id} = {rarity => $rarity, alternatives => \@triggers};
 }
