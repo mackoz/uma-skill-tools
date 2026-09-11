@@ -93,7 +93,13 @@ Value scaling (`ability_value_usage`) and duration scaling (`ability_time_usage`
 
 ## Skill cooldowns
 
-Under normal condition-triggered simulation, each skill's activation condition resolves to at most one trigger position, so a skill activates at most once per simulated race; skills with an in-game cooldown (弧線のプロフェッサー, ハヤテ一文字, etc.) aren't re-triggered. This guarantee is specific to condition-based triggering: `RaceSolverBuilder.addSkillAtPosition`'s direct position-pinning path (used by `tools/replay/replayDiff.ts`) bypasses it entirely — calling it twice for the same skill id double-fires the skill (PIPE-36).
+Skills whose `skill_data.json` alternative carries a `cooldown` re-arm that many seconds after activating, scaled by course distance: `Cooldown = BaseCooldown * CourseDistance[m] / 1000` (`plans/game-mechanics/skills.md:49-54`), the same convention `baseDuration` already uses. Every cooldown value currently in the data is 30 (base), so it works out to 48s on a 1600m course, 66s on a 2200m course, and so on. Once a skill re-arms, it re-activates if its condition is satisfied again — but whether that ever happens in practice depends on how many candidate trigger points the condition's family gets, not on the cooldown alone (`plans/condition-reference/conditions.md`):
+
+- `all_corner_random` picks from four candidate points rolled before the race and **can** re-trigger (`:125`).
+- The distribution/erlang family (`near_lane_time`, `change_order_onetime`, `accumulatetime`, `blocked_*`) likewise draws multiple candidates and **can** re-trigger.
+- `straight_random` (`:1493`) and `is_finalcorner_random` (`:675`) each resolve to exactly one candidate point for the whole race, so a skill gated on either of those **never** re-triggers even though it re-arms.
+
+A re-activation's position is chosen from the candidates drawn before the race rather than re-rolled at cooldown expiry. This is specific to condition-based triggering: `RaceSolverBuilder.addSkillAtPosition`'s direct position-pinning path (used by `tools/replay/replayDiff.ts`) bypasses it entirely — calling it twice for the same skill id double-fires the skill (PIPE-36).
 
 # Credit
 
