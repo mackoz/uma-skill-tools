@@ -21,7 +21,13 @@ if [ -f "$personal_file" ]; then
 	fi
 fi
 
-pii_hits=$(git diff --cached -U0 -- . ':!package-lock.json' ':!.githooks/pre-commit' | awk -v pat="$pii_patterns" '
+# Patterns reach awk via ENVIRON, not `awk -v`: -v processes backslash escapes in its value
+# (`\.` -> `.`, `\b` -> a literal backspace), which silently breaks a personal pattern. awk
+# regexes are POSIX ERE either way -- the per-user file must stick to the subset that means
+# the same thing in JS (the uma-tools hook) and ERE: literals, `\.`, `[...]`, `|`, `.*`; no
+# `\d`, `\b`, `\w`, or `[[:space:]]`.
+pii_hits=$(git diff --cached -U0 -- . ':!package-lock.json' ':!.githooks/pre-commit' | PII_PAT="$pii_patterns" awk '
+	BEGIN { pat = ENVIRON["PII_PAT"] }
 	/^\+\+\+ / {
 		file = $0
 		sub(/^\+\+\+ /, "", file)
