@@ -221,6 +221,31 @@ export interface HorseDiffResult {
 // stepped (every horse must still be built/stepped for blocking/spot-struggle/dueling to
 // behave identically to the unfiltered run). Omitting opts entirely reproduces the exact
 // prior default behavior/output.
+// SKL-21: the reconstruction half of run(), split out so a condition-driven run can reuse it.
+// run() pins skills at their observed positions on top of this; cooldownReport --sim deliberately
+// does not, letting the engine's own sampling decide where skills fire.
+export function buildHorseFromReplay(json: any, parsed: ParsedReplay, horseIndex: number): RaceSolverBuilder {
+	const h = horseIndex;
+	const courseSetId = json.raceCourseSet.id;
+	const course = CourseHelpers.getCourse(courseSetId);
+
+	const raceHorse = json.raceHorse[h];
+	const desc = buildHorseDesc(raceHorse, course.surface, course.distanceType);
+	return new RaceSolverBuilder(1)
+		.seed((json.randomSeed) >>> 0) // does NOT reproduce real activation timing -- see file header
+		.mode('compare') // without this the builder attaches NoopHpPolicy, not GameHpPolicy (RaceSolverBuilder.ts:879) -- HP would silently read as NaN
+		.course(courseSetId)
+		.ground(json.groundCondition)
+		.weather(json.weather)
+		.season(normalizeSeason(json.season))
+		.numUmas(parsed.horseNum)
+		.order(parsed.horseResult[h].finishOrder + 1, parsed.horseResult[h].finishOrder + 1)
+		.horse(desc);
+}
+
+// finish order as a static order-condition proxy (ADR-0001 -- the engine never live-reads
+// standings even among simulated umas, so a fixed assumption is unavoidable either way).
+// replay horseResult.finishOrder is 0-based; +1 for the engine's 1-based order().
 function run(
 	replayPath: string,
 	seedOverride?: number,
@@ -231,25 +256,13 @@ function run(
 	const course = CourseHelpers.getCourse(courseSetId);
 	const timeline = skillTimeline(parsed);
 
-	// finish order as a static order-condition proxy (ADR-0001 -- the engine never live-reads
-	// standings even among simulated umas, so a fixed assumption is unavoidable either way).
-	// replay horseResult.finishOrder is 0-based; +1 for the engine's 1-based order().
 	const builders: RaceSolverBuilder[] = [];
 	const diffResults: HorseDiffResult[] = [];
 
 	for (let h = 0; h < parsed.horseNum; h++) {
 		const raceHorse = json.raceHorse[h];
-		const desc = buildHorseDesc(raceHorse, course.surface, course.distanceType);
-		const b = new RaceSolverBuilder(1)
-			.seed((seedOverride ?? json.randomSeed) >>> 0) // does NOT reproduce real activation timing -- see file header
-			.mode('compare') // without this the builder attaches NoopHpPolicy, not GameHpPolicy (RaceSolverBuilder.ts:879) -- HP would silently read as NaN
-			.course(courseSetId)
-			.ground(json.groundCondition)
-			.weather(json.weather)
-			.season(normalizeSeason(json.season))
-			.numUmas(parsed.horseNum)
-			.order(parsed.horseResult[h].finishOrder + 1, parsed.horseResult[h].finishOrder + 1)
-			.horse(desc);
+		const b = buildHorseFromReplay(json, parsed, h);
+		if (seedOverride != null) b.seed(seedOverride >>> 0);
 
 		const activations = timeline.get(h) || [];
 		const equipped = new Set<number>((raceHorse.responseHorseData.skill_array || []).map((s: any) => s.skill_id));
