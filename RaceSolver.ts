@@ -148,6 +148,14 @@ export const enum Perspective {
 	Any = 3
 }
 
+// SKL-21
+export const enum PendingAction {
+	Wait = 0,
+	Activate = 1,
+	Rearm = 2,
+	Remove = 3
+}
+
 export const enum SkillType {
 	Noop = 0,
 	SpeedUp = 1,
@@ -1571,26 +1579,59 @@ export class RaceSolver {
 		}
 		for (let i = this.pendingSkills.length; --i >= 0;) {
 			const s = this.pendingSkills[i];
-			if (this.pos >= s.trigger.end || this.pendingRemoval.has(s.skillId)) {  // NB. `Region`s are half-open [start,end) intervals. If pos == end we are out of the trigger.
-				// skill failed to activate
-				this.pendingSkills.splice(i,1);
-				this.pendingRemoval.delete(s.skillId);
-			} else if (this.pos >= s.trigger.start && s.extraCondition(this)) {
-				// Check wisdom for skill activation if enabled
-				if (!this.shouldSkipWisdomCheck(s) && !this.checkWisdomForSkill(s)) {
-					// Skill fails due to low wisdom
-					this.pendingSkills.splice(i,1);
-				} else {
-					this.activateSkill(s);
-					this.pendingSkills.splice(i,1);
+			const action = this.pendingSkillAction(s);
+			if (action == PendingAction.Wait) continue;
+			if (action == PendingAction.Activate) {
+				this.activateSkill(s);
+				if (s.cooldown != null) {
+					// SKL-21: reuse one timer per skill rather than allocating a fresh one per
+					// activation -- this.timers is walked every step.
+					if (s.cooldownTimer == null) s.cooldownTimer = this.getNewTimer(-s.cooldown);
+					else s.cooldownTimer.t = -s.cooldown;
+					if (this.rearmSkill(s)) continue;
 				}
+			} else if (action == PendingAction.Rearm && this.rearmSkill(s)) {
+				continue;
 			}
+			this.pendingSkills.splice(i, 1);
+			this.pendingRemoval.delete(s.skillId);
 		}
 		// activateSkill() (called above, possibly re-entrantly via doActivateRandomGold) bumped
 		// activateCountThisFrame; is_activate_any_skill reads *last* frame's count, one frame delayed,
 		// same as every other phase-check-before-phase-update timing quirk in this engine.
 		this.activateCountLastFrame = this.activateCountThisFrame;
 		this.activateCountThisFrame = 0;
+	}
+
+	// SKL-21. Decides what happens to one pending skill this frame. Split out of
+	// processSkillActivations()'s loop so the cooldown rules are unit-testable without standing up
+	// a whole race. Ordering matters in two places: pendingRemoval wins over everything, and the
+	// cooldown check comes *before* the wisdom check so a candidate skipped while cooling down does
+	// not consume a wisdom roll.
+	pendingSkillAction(s: PendingSkill): PendingAction {
+		if (this.pendingRemoval.has(s.skillId)) return PendingAction.Remove;
+		// NB. `Region`s are half-open [start,end): if pos == end we are out of the trigger.
+		if (this.pos >= s.trigger.end) {
+			// A skill that has never fired keeps the old behavior -- a missed window is fatal. Spares
+			// exist to model re-triggering, not to give first activations extra chances. And a skill
+			// that HAS fired but has no spare left to advance into is equally done -- only report
+			// Rearm when a spare actually exists, so a caller driving this method directly (e.g. a
+			// unit test, or a future refactor that doesn't also call rearmSkill()) doesn't need to
+			// separately re-derive "but is there actually anything to rearm into?".
+			return (s.cooldownTimer != null && s.spares != null && s.spares.length > 0) ? PendingAction.Rearm : PendingAction.Remove;
+		}
+		if (!(this.pos >= s.trigger.start && s.extraCondition(this))) return PendingAction.Wait;
+		if (s.cooldownTimer != null && s.cooldownTimer.t < 0) return PendingAction.Rearm;
+		if (!this.shouldSkipWisdomCheck(s) && !this.checkWisdomForSkill(s)) return PendingAction.Remove;
+		return PendingAction.Activate;
+	}
+
+	// SKL-21. Moves the next spare candidate into `trigger`. Returns false when none is left, which
+	// is the caller's signal to drop the skill.
+	rearmSkill(s: PendingSkill): boolean {
+		if (s.spares == null || s.spares.length == 0) return false;
+		s.trigger = s.spares.shift()!;
+		return true;
 	}
 
 	checkWisdomForSkill(skill: PendingSkill): boolean {
