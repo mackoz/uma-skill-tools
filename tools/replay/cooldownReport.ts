@@ -1,7 +1,18 @@
 // SKL-21: measures how often a skill with an in-game cooldown actually activates more than once,
-// from real replays and from the simulator, so the two can be compared. The corner/straight family
-// reporting zero on course 10903 is the pass/fail check for the cooldown gate -- that course's
-// corners all sit inside one 30s window, so a second corner proc there is impossible.
+// from real replays and from the simulator, so the two can be compared. The "discrete" family
+// (all_corner_random/straight_random/is_finalcorner_random) reporting zero on course 10903 is the
+// pass/fail check for the cooldown gate -- but the two halves of that bucket carry very different
+// weight now. Course 10903's corners span roughly 450m-1127m (~31s at corpus pace), and cooldown is
+// distance-scaled (Cooldown = BaseCooldown * distance/1000): on this 1600m course that's 48s, which
+// outlasts the ~31s corner span, so a second all_corner_random proc within one pass of the corners
+// is geometrically impossible on this course -- NOT because corners "sit inside one 30s window" (an
+// earlier, wrong version of this comment, and the reason the original check failed: it assumed an
+// unscaled 30s cooldown against a rougher ~570m corner-span estimate that didn't match course
+// 10903's actual geometry). The straight half of this bucket isn't really doing pass/fail work any
+// more either way: straight_random skills get zero spares by construction (see
+// RaceSolverBuilder.ts@skl-21-spares-count and samplePolicyPlacesMultiplePoints()), so they can
+// never re-arm regardless of any course's geometry -- a straight_random re-trigger appearing here
+// would mean the spares restriction itself broke, not a cooldown/geometry interaction.
 import * as fs from 'fs';
 import * as path from 'path';
 import { parseReplayFile, skillTimeline } from './parseReplay';

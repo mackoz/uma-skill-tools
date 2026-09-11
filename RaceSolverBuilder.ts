@@ -263,8 +263,12 @@ export interface SkillData {
 //   it -- a single point, no matter how many straights the course has.
 // - `is_finalcorner_random` (RandomPolicy, :675) rolls ONE point on the (single) final corner.
 // - DistributionRandomPolicy and its subclasses (Uniform/LogNormal/Erlang) model conditions that
-//   are continuously re-evaluated in the real game, so they already place multiple independent
-//   candidates regardless of cooldown.
+//   are continuously re-evaluated in the real game; unlike the other three, requesting spares for
+//   them is NOT a no-op "regardless of cooldown" -- sample() draws nsamples*(1+spares) and returns
+//   early when spares==0, so the candidate count is exactly a function of the spares requested.
+//   They keep spares because real replays show 7 genuine re-triggers in that family (see
+//   tools/replay/cooldownReport.ts and the :923 comment below), not because the policy would place
+//   multiple points unconditionally either way.
 // Requesting spares for a policy that only ever places one point would be a no-op at best (the
 // policy pads the request out with inert zero-length regions) and is excluded here so the spares
 // count documents something true about the policy, not just "harmless either way."
@@ -925,7 +929,9 @@ export class RaceSolverBuilder {
 		// straight_random and is_finalcorner_random (conditions.md:1493 and :675) each document
 		// placing exactly one point no matter the course, so they get 0 spares and can never re-arm,
 		// matching that documented single-point behavior. Non-cooldown skills pass 0 regardless and
-		// draw exactly what they always drew.
+		// draw exactly what they always drew. (Duplicated at :631 for the pacer path --
+		// prepPacerTriggers() -- with the same value and the same rationale.)
+		// ANCHOR: skl-21-spares-count
 		const SPARES = 3;
 		const triggers = skilldata.map(sd => {
 			const key = sd.perspective != null ? this.getSamplePolicyKey(sd.skillId, sd.perspective) : sd.skillId;
