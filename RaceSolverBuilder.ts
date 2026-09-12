@@ -282,7 +282,7 @@ function samplePolicyPlacesMultiplePoints(sp: ActivationSamplePolicy): boolean {
 // Terms that say WHEN a debuff lands or WHICH COURSES the skill can exist on. Everything else in a
 // debuff's condition describes the *caster* -- their order, running style, who is blocking them --
 // and buildSkillData evaluates conditions against the builder's own horse, i.e. the victim. See
-// docs/adr/0018-victim-safe-debuff-conditions.md.
+// docs/adr/0014-victim-safe-debuff-conditions.md.
 //
 // Allowlist rather than denylist, deliberately: a caster term introduced by a future data refresh
 // that slipped past a denylist would evaluate against the victim and make that debuff silently
