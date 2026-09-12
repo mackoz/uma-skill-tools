@@ -278,6 +278,32 @@ function samplePolicyPlacesMultiplePoints(sp: ActivationSamplePolicy): boolean {
 	return sp === AllCornerRandomPolicy || sp instanceof DistributionRandomPolicy;
 }
 
+// ANCHOR: victim-safe-condition-allowlist
+// Terms that say WHEN a debuff lands or WHICH COURSES the skill can exist on. Everything else in a
+// debuff's condition describes the *caster* -- their order, running style, who is blocking them --
+// and buildSkillData evaluates conditions against the builder's own horse, i.e. the victim. See
+// docs/adr/0018-victim-safe-debuff-conditions.md.
+//
+// Allowlist rather than denylist, deliberately: a caster term introduced by a future data refresh
+// that slipped past a denylist would evaluate against the victim and make that debuff silently
+// never fire. Over-stripping instead widens the firing window -- wrong, but observable, and
+// test/victim-safe-condition.test.ts fails on any unclassified term either way.
+export const VictimSafeConditions: ReadonlySet<string> = new Set([
+	'phase', 'phase_random', 'accumulatetime', 'distance_type'
+]);
+
+// ConditionParser's grammar is `Or ::= And '@' Or | And` with no parentheses, so `&` binds tighter
+// than `@` and each `@`-branch's `&`-clauses filter independently. A branch that keeps nothing is
+// unconditional, which makes the whole disjunction unconditional -- returned as '' for the caller
+// to treat as "no condition". No shipped debuff hits that case (pinned by the test).
+export function victimSafeCondition(condition: string): string {
+	const branches = condition.split('@').map(branch =>
+		branch.split('&')
+			.filter(clause => VictimSafeConditions.has(clause.replace(/[<>=!].*/, '')))
+			.join('&'));
+	return branches.some(b => b.length === 0) ? '' : branches.join('@');
+}
+
 function isTarget(self: Perspective, targetType: SkillTarget) {
 	return targetType == SkillTarget.All || self == Perspective.Any || ((self == Perspective.Self) == (targetType == SkillTarget.Self));
 }
