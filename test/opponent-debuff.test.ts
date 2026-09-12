@@ -26,6 +26,19 @@ function runOnce(debuffs: string[]) {
 	return { maxHp, hp: (s.hp as any).hp };
 }
 
+function runOnceSeeded(debuffs: string[], seed: number) {
+	const b = new RaceSolverBuilder(1).seed(seed)
+		.course(CourseHelpers.getCourse(COURSE_ID))
+		.mode('compare')
+		.horse(horse as any);
+	for (const id of debuffs) b.addOpponentDebuff(id);
+	const s = b.build().next(false).value as RaceSolver;
+	s.initUmas([]);
+	const maxHp = (s.hp as any).maxHp;
+	while (s.pos < s.course.distance) s.step(1 / 15);
+	return { maxHp, hp: (s.hp as any).hp };
+}
+
 describe('addOpponentDebuff', () => {
 	test('N copies of a 1% debuff remove N% of maxHp relative to a clean run', () => {
 		const clean = runOnce([]);
@@ -46,6 +59,16 @@ describe('addOpponentDebuff', () => {
 
 	test('a debuff using an unregistered caster condition does not throw', () => {
 		expect(() => runOnce(['200771'])).not.toThrow();   // temptation_opponent_count_behind
+	});
+
+	test('an incoming debuff is not subject to the wisdom roll', () => {
+		// skillWisdomCheck defaults on; a White-rarity non-green skill would otherwise roll.
+		// Run across many seeds: every one must show the full drain.
+		for (let seed = 1; seed <= 25; ++seed) {
+			const clean = runOnceSeeded([], seed);
+			const hit = runOnceSeeded(['201162'], seed);
+			expect(clean.hp - hit.hp).toBeCloseTo(clean.maxHp * 0.01, 4);
+		}
 	});
 
 	test('adding no debuffs leaves the build byte-identical', () => {

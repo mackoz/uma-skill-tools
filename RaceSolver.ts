@@ -251,6 +251,10 @@ export interface PendingSkill {
 	cooldown?: number
 	spares?: Region[]
 	cooldownTimer?: Timer
+	// HP-7: an opponent's stamina debuff landed on us. The wisdom roll models the *caster* deciding
+	// to use the skill, and we have no caster -- the configured count already means "this many
+	// landed", so the roll would double-count the uncertainty.
+	victimSafe?: boolean
 }
 
 interface ActiveSkill {
@@ -1673,6 +1677,11 @@ export class RaceSolver {
 
 	shouldSkipWisdomCheck(skill: PendingSkill): boolean {
 		if (!this.skillWisdomCheck) {
+			return true;
+		}
+
+		// HP-7
+		if (skill.victimSafe) {
 			return true;
 		}
 

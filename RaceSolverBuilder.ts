@@ -253,6 +253,7 @@ export interface SkillData {
 	effects: SkillEffect[],
 	cooldown?: number
 	originWisdom?: number
+	victimSafe?: boolean
 }
 
 // SKL-21. Whether a sample policy actually places more than one candidate trigger point, i.e.
@@ -386,7 +387,8 @@ export function buildSkillData(horse: HorseParameters, raceParams: PartialRacePa
 				extraCondition: extraCondition,
 				effects: effects,
 				cooldown: skill.cooldown,
-				originWisdom: originWisdom
+				originWisdom: originWisdom,
+				victimSafe: victimSafe
 			});
 		}
 	}
@@ -707,6 +709,7 @@ export class RaceSolverBuilder {
 					extraCondition: sd.extraCondition,
 					effects: sd.effects,
 					cooldown: sd.cooldown,
+					victimSafe: sd.victimSafe,
 					spares: spares > 0 ? flat.slice(n + si * spares, n + (si + 1) * spares) : undefined
 				};
 			})
@@ -1019,6 +1022,7 @@ export class RaceSolverBuilder {
 					effects: sd.effects,
 					originWisdom: sd.originWisdom,
 					cooldown: sd.cooldown,
+					victimSafe: sd.victimSafe,
 					spares: spares > 0 ? flat.slice(n + si * spares, n + (si + 1) * spares) : undefined
 				};
 			});
