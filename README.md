@@ -91,6 +91,20 @@ Value scaling (`ability_value_usage`) and duration scaling (`ability_time_usage`
 
 `master_jp.mdb` currently carries 62 JP skills with a non-Direct `ability_value_usage` or `ability_time_usage` code on some effect (queried directly against `skill_data`, cross-checked against `data/jp/skill_data.json`'s 2119 compiled entries — both agree); about 40 of those still carry at least one code outside the table above. Every one of those remaining codes returns exactly `1.0` (unscaled) from `ValueScaling.ts`, which documents a reason for each group in a comment next to its lookup tables — training-scenario/account state this simulator can't model (value 3–7, 10, 12, 24 — mostly approximated at a `×1.2` ceiling in `tools/make_skill_data.pl` instead, though usage 12 is only partially covered: `210351` is deliberately absent from that script's `@scenario_skills`, so it receives no approximation at all — see SKL-32), field/blocking/lead state `ActivationConditions.ts` already samples statistically rather than models geometrically (value 19/20/21/25, time 2/4/5/6), missing skill-tag data (value 14), or undocumented (value 11 and 26–40, time 8). See `docs/adr/0013-value-scaling-identity-fallthrough.md` for why identity-fallthrough was chosen over throwing on an unknown code or extending the generator-side approximation to cover them. Since the game keeps adding new codes over time, treat "every other code" as an open set, not a fixed list.
 
+## Opponent debuffs (`addOpponentDebuff`)
+
+`RaceSolverBuilder.addOpponentDebuff(skillId)` lets a caller apply a stamina debuff an opponent
+lands on the solved horse, without simulating that opponent at all: the skill is added with
+`Perspective.Other` (so the effect targets the solved horse but it gets no caster credit) and its
+condition string is rewritten to drop caster-state clauses (order, running style, blocking, and
+similar) before it's evaluated against the solved horse itself — everything else in the condition
+(`phase`, `phase_random`, `accumulatetime`, `distance_type`) is kept as-is. The rewritten trigger
+also always samples with `RandomPolicy` rather than whatever policy the original condition implied,
+and bypasses the wisdom roll (`checkWisdomForSkill`) entirely, since a configured debuff already
+means "this many landed," not "this many were attempted by a caster this engine isn't modeling."
+See `docs/adr/0014-victim-safe-debuff-conditions.md` for the rationale, including a target-type-18
+(`EnemyStrategy`, running-style-gated debuffs) caveat this function knowingly doesn't model.
+
 ## Skill cooldowns
 
 Skills whose `skill_data.json` alternative carries a `cooldown` re-arm that many seconds after activating, scaled by course distance: `Cooldown = BaseCooldown * CourseDistance[m] / 1000` (`plans/game-mechanics/skills.md:49-54`), the same convention `baseDuration` already uses. Every cooldown value currently in the data is 30 (base), so it works out to 48s on a 1600m course, 66s on a 2200m course, and so on. Once a skill re-arms, it re-activates if its condition is satisfied again — but whether that ever happens in practice depends on how many candidate trigger points the condition's family gets, not on the cooldown alone (`plans/condition-reference/conditions.md`):
