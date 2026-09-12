@@ -3,7 +3,7 @@ import { CourseData, CourseHelpers, DistanceType } from './CourseData';
 import { Region, RegionList } from './Region';
 import { deriveSeed, Rule30CARng, SeededRng } from './Random';
 import { Conditions, random, immediate, noopRandom, noopImmediate } from './ActivationConditions';
-import { ActivationSamplePolicy, ImmediatePolicy, AllCornerRandomPolicy, DistributionRandomPolicy } from './ActivationSamplePolicy';
+import { ActivationSamplePolicy, ImmediatePolicy, RandomPolicy, AllCornerRandomPolicy, DistributionRandomPolicy } from './ActivationSamplePolicy';
 import { getParser } from './ConditionParser';
 import { RaceSolver, RaceState, PendingSkill, DynamicCondition, SkillType, SkillTypeValues, SkillRarity, SkillEffect, Perspective, PosKeepMode } from './RaceSolver';
 import { Mood, GroundCondition, Weather, Season, Time, Grade, RaceParameters } from './RaceParameters';
@@ -319,7 +319,7 @@ function buildSkillEffects(skill, perspective: Perspective) {
 	}));
 }
 
-export function buildSkillData(horse: HorseParameters, raceParams: PartialRaceParameters, course: CourseData, wholeCourse: RegionList, parser: {parse: any, tokenize: any}, skillId: string, perspective: Perspective, ignoreNullEffects: boolean = false, originWisdom?: number) {
+export function buildSkillData(horse: HorseParameters, raceParams: PartialRaceParameters, course: CourseData, wholeCourse: RegionList, parser: {parse: any, tokenize: any}, skillId: string, perspective: Perspective, ignoreNullEffects: boolean = false, originWisdom?: number, victimSafe: boolean = false) {
 	if (!(skillId in skills)) {
 		throw new Error('bad skill ID ' + skillId);
 	}
@@ -341,8 +341,23 @@ export function buildSkillData(horse: HorseParameters, raceParams: PartialRacePa
 			}
 		}
 
-		const op = parser.parse(parser.tokenize(skill.condition));
-		const [regions, extraCondition] = op.apply(full, course, horse, extra);
+		// HP-7: an incoming debuff's condition is rewritten to drop caster-state terms before it is
+		// parsed -- see victimSafeCondition above. A fully-stripped condition ('') means the skill
+		// is unconditional over `full`, which the parser has no representation for, so short-circuit.
+		const conditionText = victimSafe ? victimSafeCondition(skill.condition) : skill.condition;
+		let regions: RegionList, extraCondition: DynamicCondition, samplePolicy: ActivationSamplePolicy;
+		if (victimSafe && conditionText === '') {
+			regions = full;
+			extraCondition = (_) => true;
+			samplePolicy = RandomPolicy;
+		} else {
+			const op = parser.parse(parser.tokenize(conditionText));
+			[regions, extraCondition] = op.apply(full, course, horse, extra);
+			// Stripping a randomizing caster term can leave a policy that fires at the exact region
+			// boundary every sample (bare `phase` carries ImmediatePolicy). A debuff lands at an
+			// arbitrary moment in its window, so force a uniform draw.
+			samplePolicy = victimSafe ? RandomPolicy : op.samplePolicy;
+		}
 		if (regions.length == 0) {
 			continue;
 		}
@@ -366,7 +381,7 @@ export function buildSkillData(horse: HorseParameters, raceParams: PartialRacePa
 				perspective: perspective,
 				// for some reason 1*/2* uniques, 1*/2* upgraded to 3*, and naturally 3* uniques all have different rarity (3, 4, 5 respectively)
 				rarity: rarity >= 3 && rarity <= 5 ? 3 : rarity,
-				samplePolicy: op.samplePolicy,
+				samplePolicy,
 				regions: regions,
 				extraCondition: extraCondition,
 				effects: effects,
@@ -476,7 +491,7 @@ export class RaceSolverBuilder {
 	_rng: SeededRng
 	_seed: number
 	_parser: {parse: any, tokenize: any}
-	_skills: {id: string, p: Perspective, originWisdom?: number}[]
+	_skills: {id: string, p: Perspective, originWisdom?: number, victimSafe?: boolean}[]
 	_samplePolicyOverride: Map<string, ActivationSamplePolicy>
 	_extraSkillHooks: ((skilldata: SkillData[], horse: HorseParameters, course: CourseData) => void)[]
 	_onSkillActivate: (state: RaceSolver, skillId: string) => void
@@ -828,6 +843,15 @@ export class RaceSolverBuilder {
 		return this;
 	}
 
+	// HP-7: a stamina debuff an opponent lands on THIS horse. Added with Perspective.Other so the
+	// effect applies (isTarget) but the horse gets no credit for casting it, and with its condition
+	// rewritten victim-safe. Deliberately leaves `cooldown` unset: no shipped debuff has one, and
+	// RandomPolicy places a single point that could never re-arm anyway (SKL-21).
+	addOpponentDebuff(skillId: string) {
+		this._skills.push({id: skillId, p: Perspective.Other, victimSafe: true});
+		return this;
+	}
+
 	/**
 	 * Adds a skill that will be forced to activate at a specific distance on the track.
 	 * This overrides the skill's normal activation conditions and sample policy.
@@ -947,7 +971,7 @@ export class RaceSolverBuilder {
 		Object.freeze(wholeCourse);
 
 		const makeSkill = buildSkillData.bind(null, horse, this._raceParams, this._course, wholeCourse, this._parser);
-		const skilldata = this._skills.flatMap(({id,p,originWisdom}) => makeSkill(id, p, false, originWisdom));
+		const skilldata = this._skills.flatMap(({id,p,originWisdom,victimSafe}) => makeSkill(id, p, false, originWisdom, victimSafe));
 		this._extraSkillHooks.forEach(h => h(skilldata, horse, this._course));
 		const occurrences = new Map<string, number>();
 		// SKL-21: a cooldown skill gets 3 spare candidates (+1 primary = 4 total) -- NOT a race-time
