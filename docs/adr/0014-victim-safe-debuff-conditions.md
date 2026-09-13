@@ -35,8 +35,10 @@ Surger/End Closer" — exactly the running-style gate the Subdued/Flustered debu
 et al.) is meant to apply to its victim. Everything else describes the caster (order, running
 style via the plain `running_style` term, blocking, dueling, temptation state, and so on) and is
 stripped. Filtering happens per `&`-clause within each `@`-branch; a branch that loses every clause
-is unconditional, and a condition where *every* branch reduces that way returns `''` for the caller
-to treat as "no condition" (parser has no other representation for it).
+is unconditional, and since an unconditional branch makes the whole `@`-disjunction unconditional,
+`victimSafeCondition()` returns `''` the moment *any single* branch reduces to empty — for the
+caller to treat as "no condition" (parser has no other representation for it) — rather than waiting
+for every branch to empty out.
 
 `victimSafe` (`buildSkillData()`'s parameter, threaded onto `SkillData`/`PendingSkill`) gates this
 rewrite so it only applies to skills added via `addOpponentDebuff` — a horse's own skills are

@@ -879,9 +879,10 @@ export class RaceSolverBuilder {
 	// HP-7: a stamina debuff an opponent lands on THIS horse. Added with Perspective.Other so the
 	// effect applies (isTarget) but the horse gets no credit for casting it, and with its condition
 	// rewritten victim-safe. Deliberately leaves `cooldown` unset: no shipped debuff carries a
-	// cooldown (checked: all 30 alternatives, both datasets), and even if one did, RandomPolicy is a
-	// frozen singleton -- not AllCornerRandomPolicy or a DistributionRandomPolicy -- so
-	// samplePolicyPlacesMultiplePoints() returns false and it gets 0 spares regardless (SKL-21).
+	// cooldown (checked: all alternatives in both datasets -- 30 on JP, 21 on Global), and even if
+	// one did, RandomPolicy is a frozen singleton -- not AllCornerRandomPolicy or a
+	// DistributionRandomPolicy -- so samplePolicyPlacesMultiplePoints() returns false and it gets 0
+	// spares regardless (SKL-21).
 	addOpponentDebuff(skillId: string) {
 		this._skills.push({id: skillId, p: Perspective.Other, victimSafe: true});
 		return this;
