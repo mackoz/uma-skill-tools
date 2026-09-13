@@ -31,7 +31,7 @@ function makeStub(pendingSkills: PendingSkill[]) {
 	return Object.assign(
 		attachMethods({
 			pendingSkills,
-			pendingRemoval: new Set<string>(),
+			pendingRemoval: new Set<PendingSkill>(),
 			gorosiRng: {uniform: (_n: number) => 0} as any,
 			activateSkill: (s: PendingSkill) => { activated.push(s.skillId); }
 		}, 'doActivateRandomGold'),

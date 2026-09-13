@@ -11,7 +11,7 @@ import { attachMethods } from './RaceSolverTestHelpers';
 function makeStub(pos: number, wisdom: {shouldSkipWisdomCheck?: (s: PendingSkill) => boolean, checkWisdomForSkill?: (s: PendingSkill) => boolean} = {}) {
 	return attachMethods({
 		pos,
-		pendingRemoval: new Set<string>(),
+		pendingRemoval: new Set<PendingSkill>(),
 		shouldSkipWisdomCheck: wisdom.shouldSkipWisdomCheck ?? ((_: PendingSkill) => true),
 		checkWisdomForSkill: wisdom.checkWisdomForSkill ?? ((_: PendingSkill) => true)
 	}, 'pendingSkillAction', 'rearmSkill');
@@ -81,7 +81,9 @@ test('a zero-length padding spare can never satisfy a trigger window', () => {
 test('pendingRemoval wins over a re-arm', () => {
 	const s = skill({cooldown: 30, spares: [new Region(1500, 1510)], cooldownTimer: new Timer(1)});
 	const stub = makeStub(1005);
-	stub.pendingRemoval.add('200331');
+	// HP-7 review-5: pendingRemoval is keyed by PendingSkill identity, not bare skillId -- flag the
+	// exact instance under test, not some other same-id stand-in.
+	stub.pendingRemoval.add(s);
 	strictEqual(stub.pendingSkillAction(s), PendingAction.Remove);
 });
 

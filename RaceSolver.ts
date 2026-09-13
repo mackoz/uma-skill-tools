@@ -310,7 +310,7 @@ export class RaceSolver {
 	activeLaneMovementSkills: ActiveSkill[]
 	activeChangeLaneSkills: ActiveSkill[]
 	pendingSkills: PendingSkill[]
-	pendingRemoval: Set<string>
+	pendingRemoval: Set<PendingSkill>
 	usedSkills: Set<string>
 	nHills: number
 	hillIdx: number
@@ -1607,13 +1607,17 @@ export class RaceSolver {
 			// SKL-21. Unconditional, but a no-op except for the pendingRemoval-triggered Remove
 			// branch above (where it correctly clears the flag this same entry was just matched
 			// against). For the Activate and wisdom-fail-Remove branches, this only deletes
-			// something real if THIS entry's own skillId got added to pendingRemoval mid-iteration --
-			// which only doActivateRandomGold's re-entrant activateSkill() can do, and only for a
-			// Gold/Evolution skill whose own effects satisfy its candidate filter (every effect type
-			// > WisdomUp) while also carrying an ActivateRandomGold (type 37) effect that re-picks
-			// this same entry. No skill in the current data combines those, so it's a no-op today;
-			// it stops being one the day a gold skill's own effects include type 37.
-			this.pendingRemoval.delete(s.skillId);
+			// something real if THIS exact PendingSkill instance got added to pendingRemoval
+			// mid-iteration -- which only doActivateRandomGold's re-entrant activateSkill() can do,
+			// and only by force-activating this same instance (HP-7 review-5: pendingRemoval is keyed
+			// by PendingSkill identity, not bare skillId, so a *different* instance sharing this
+			// skillId being force-activated does not add THIS entry here). That in turn requires this
+			// entry to be a Gold/Evolution skill whose own effects satisfy doActivateRandomGold's
+			// candidate filter (every effect type > WisdomUp) while also carrying an
+			// ActivateRandomGold (type 37) effect that re-picks itself. No skill in the current data
+			// combines those, so it's a no-op today; it stops being one the day a gold skill's own
+			// effects include type 37.
+			this.pendingRemoval.delete(s);
 		}
 		// activateSkill() (called above, possibly re-entrantly via doActivateRandomGold) bumped
 		// activateCountThisFrame; is_activate_any_skill reads *last* frame's count, one frame delayed,
@@ -1635,7 +1639,7 @@ export class RaceSolver {
 	// spare, wisdom unexamined -- instead of being judged (and potentially killed) on a roll that
 	// was never going to fire anyway.
 	pendingSkillAction(s: PendingSkill): PendingAction {
-		if (this.pendingRemoval.has(s.skillId)) return PendingAction.Remove;
+		if (this.pendingRemoval.has(s)) return PendingAction.Remove;
 		// NB. `Region`s are half-open [start,end): if pos == end we are out of the trigger.
 		if (this.pos >= s.trigger.end) {
 			// A skill that has never fired keeps the old behavior -- a missed window is fatal. Spares
@@ -1843,9 +1847,12 @@ export class RaceSolver {
 		const goldIndices = this.pendingSkills.reduce((acc, skill, i) => {
 			// HP-7 review-4 (C1): an incoming debuff (victimSafe) is an opponent's skill landed on
 			// you, not a gold skill you chose to activate -- letting it be force-activated here fires
-			// it outside the proc window victimSafeCondition() computed, and since pendingRemoval is a
-			// Set keyed by bare skillId, only one of N same-id configured copies gets removed, so a
-			// surviving copy still activates again later -- an extra, uncounted drain.
+			// it outside the proc window victimSafeCondition() computed. This guard stops a
+			// victimSafe entry from being *selected* here; it is still needed even though
+			// pendingRemoval is now keyed by PendingSkill identity (HP-7 review-5), because that
+			// keying only fixes *removal* -- which entry gets swept up as collateral when some
+			// OTHER, non-victimSafe same-id skill is force-activated below. It does nothing to stop
+			// a victimSafe entry from being the one force-activated in the first place.
 			if ((skill.rarity == SkillRarity.Gold || skill.rarity == SkillRarity.Evolution) &&
 				skill.effects.every(ef => ef.type > SkillType.WisdomUp) &&
 				!(skill.cooldownTimer != null && skill.cooldownTimer.t < 0) &&
@@ -1865,7 +1872,7 @@ export class RaceSolver {
 			// is error-prone and undesirable since it means the same PendingSkill instance can't be used with multiple RaceSolvers.
 			// instead, flag the skill later to be removed in processSkillActivations (either later in the loop that called us, or
 			// the next time processSkillActivations is called).
-			this.pendingRemoval.add(s.skillId);
+			this.pendingRemoval.add(s);
 		}
 	}
 

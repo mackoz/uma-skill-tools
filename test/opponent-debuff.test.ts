@@ -209,6 +209,89 @@ describe('addOpponentDebuff is immune to ActivateRandomGold force-activation (C1
 			expect(pos).toBeLessThanOrEqual(windowEnd);
 		}
 	});
+
+	// 910071 ("Adventure of 564" at rarity 1) is the same skill as 110071 but inheritable by ANY
+	// uma, so it's the variant most victims would actually face -- and it was untested. It carries
+	// the same type-37 (ActivateRandomGold) effect as 110071 on the shipped data (confirmed against
+	// data/jp/skill_data.json's '910071' entry), so it exercises the exact same C1 path.
+	test('910071 (rarity-1 variant): 2 configured copies of a gold incoming debuff still activate exactly twice, inside their real window, when the victim carries the inherited ActivateRandomGold skill', () => {
+		const course = CourseHelpers.getCourse(COURSE_ID);
+		const windowStart = CourseHelpers.phaseStart(course.distance, 2);
+		const windowEnd = CourseHelpers.phaseEnd(course.distance, 2);
+
+		const b = new RaceSolverBuilder(1).seed(1)
+			.course(course)
+			.mode('compare')
+			.skillWisdomCheck(false)
+			.horse(horse as any);
+		b.addSkill('910071', Perspective.Self, createFixedPositionPolicy(100));
+		b.addOpponentDebuff('201441');
+		b.addOpponentDebuff('201441');
+
+		const activations: number[] = [];
+		b.onSkillActivate((s: RaceSolver, skillId: string) => {
+			if (skillId === '201441') activations.push(s.pos);
+		});
+
+		const s = b.build().next(false).value as RaceSolver;
+		s.initUmas([]);
+		while (s.pos < s.course.distance) s.step(1 / 15);
+
+		expect(activations.length).toBe(2);
+		for (const pos of activations) {
+			expect(pos).toBeGreaterThanOrEqual(windowStart);
+			expect(pos).toBeLessThanOrEqual(windowEnd);
+		}
+	});
+});
+
+// HP-7 review-5: compare.ts's actual add order puts the opponent's ORDINARY equipped copy of a
+// skill (added at plain Perspective.Other, via addSkill()) into pendingSkills BEFORE any
+// configured addOpponentDebuff() copy of that same skillId -- see compare.ts:164-180. The C1 test
+// above has no such ordinary same-id sibling, so it passed even with the collateral-removal defect
+// fully live: when doActivateRandomGold() force-activates a different, non-victimSafe pending
+// skill, it flagged the bare skillId for removal, and pendingSkillAction()'s removal check had no
+// perspective/victimSafe check of its own -- so whichever pending entry sharing that skillId came
+// first in iteration order (here, the opponent's lower-index ordinary copy) got swept up as
+// collateral, silently discarding one of the two configured debuff copies instead. Keying
+// pendingRemoval by PendingSkill identity (this fix) makes each entry's removal depend on which
+// exact instance was force-activated, not on skillId.
+describe('addOpponentDebuff survives compare.ts production add order (review-5)', () => {
+	test('both configured copies still activate inside the real window when the opponent equips the same skill ordinarily, added before the debuffs', () => {
+		const course = CourseHelpers.getCourse(COURSE_ID);
+		const windowStart = CourseHelpers.phaseStart(course.distance, 2);
+		const windowEnd = CourseHelpers.phaseEnd(course.distance, 2);
+
+		const b = new RaceSolverBuilder(1).seed(1)
+			.course(course)
+			.mode('compare')
+			.skillWisdomCheck(false)
+			.horse(horse as any);
+		// Mirrors compare.ts's real order: victim's own ActivateRandomGold carrier, THEN the
+		// opponent's ordinary equipped copy of 201441 (Perspective.Other, real samplePolicy, added
+		// via addSkill exactly like compare.ts's plain skill-list pass), THEN the two configured
+		// incoming-debuff copies of the same skillId.
+		b.addSkill('110071', Perspective.Self, createFixedPositionPolicy(100));
+		b.addSkill('201441', Perspective.Other, undefined, 1000);
+		b.addOpponentDebuff('201441');
+		b.addOpponentDebuff('201441');
+
+		const activations: number[] = [];
+		b.onSkillActivate((s: RaceSolver, skillId: string) => {
+			if (skillId === '201441') activations.push(s.pos);
+		});
+
+		const s = b.build().next(false).value as RaceSolver;
+		s.initUmas([]);
+		while (s.pos < s.course.distance) s.step(1 / 15);
+
+		const inWindow = activations.filter(pos => pos >= windowStart && pos <= windowEnd);
+		// Before the fix: the opponent's ordinary copy (lower pendingSkills index, reached first by
+		// the force-activation removal loop) silently absorbed one of the two configured copies'
+		// removals, so only 1 of 2 configured copies survived to fire inside the window -- the
+		// repro's "in-window 1/2". After the fix, both configured copies survive and fire inside it.
+		expect(inWindow.length).toBe(2);
+	});
 });
 
 // HP-7 review-4 (M7): the feature's headline claim is that a debuff fires at its REAL proc window
