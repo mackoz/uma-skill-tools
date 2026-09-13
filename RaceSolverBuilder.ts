@@ -426,7 +426,8 @@ export function buildSkillData(horse: HorseParameters, raceParams: PartialRacePa
 			regions: afterEnd,
 			extraCondition: (_) => false,
 			effects: effects,
-			originWisdom: originWisdom
+			originWisdom: originWisdom,
+			victimSafe: victimSafe
 		}];
 	}
 }
@@ -682,6 +683,10 @@ export class RaceSolverBuilder {
 			if (this._pacerSkillIds.length > 0) {
 				const triggerSeed = deriveSeed(baseSeed, `pacer-triggers:${slot}`);
 				const occurrences = new Map<string, number>();
+				// HP-7 review-4 (E-I1): victim-safe entries get their own occurrence-count and seed
+				// namespace -- see the identical map and the full rationale at the same site in build()
+				// below.
+				const debuffOccurrences = new Map<string, number>();
 				// SKL-21: identical spares treatment to build()'s main sampling -- a cooldown skill on a
 				// pacemaker must be able to activate more than once too. SPARES=3 (+1 primary = 4
 				// candidates) matches all_corner_random's own four-point roll exactly -- see
@@ -694,13 +699,22 @@ export class RaceSolverBuilder {
 				const SPARES = 3;
 				pacerTriggers = this._pacerSkillData.map(sd => {
 					const key = sd.perspective != null ? this.getSamplePolicyKey(sd.skillId, sd.perspective) : sd.skillId;
-					const occurrence = occurrences.get(key) || 0;
-					occurrences.set(key, occurrence + 1);
+					// HP-7 review-4 (E-I1): count victim-safe occurrences in their own map, not the shared
+					// one every other Perspective.Other add path counts into -- see the seed derivation
+					// below for why.
+					const occMap = sd.victimSafe ? debuffOccurrences : occurrences;
+					const occurrence = occMap.get(key) || 0;
+					occMap.set(key, occurrence + 1);
 					// HP-7 review-3 fix 1: a victim-safe debuff's forced RandomPolicy (buildSkillData)
 					// must never be overridable -- see the identical guard and comment in build() below.
 					const sp = sd.victimSafe ? sd.samplePolicy : (this._samplePolicyOverride.get(key) || sd.samplePolicy);
 					const spares = sd.cooldown != null && samplePolicyPlacesMultiplePoints(sp) ? SPARES : 0;
-					const flat = sp.sample(sd.regions, this.nsamples, new Rule30CARng(deriveSeed(triggerSeed, `${key}:${occurrence}`)), spares);
+					// HP-7 review-4 (E-I1): seed from a `:debuff:`-namespaced key for victim-safe entries too
+					// -- `occurrence` alone isn't enough, since the shared `occurrences` map above only
+					// tracked one shared count for the key. Namespacing both means the presence of an
+					// unrelated same-id Perspective.Other add can no longer shift a debuff's RNG stream.
+					const seedKey = sd.victimSafe ? `${key}:debuff:${occurrence}` : `${key}:${occurrence}`;
+					const flat = sp.sample(sd.regions, this.nsamples, new Rule30CARng(deriveSeed(triggerSeed, seedKey)), spares);
 					return {flat, spares};
 				});
 			}
@@ -864,8 +878,10 @@ export class RaceSolverBuilder {
 
 	// HP-7: a stamina debuff an opponent lands on THIS horse. Added with Perspective.Other so the
 	// effect applies (isTarget) but the horse gets no credit for casting it, and with its condition
-	// rewritten victim-safe. Deliberately leaves `cooldown` unset: no shipped debuff has one, and
-	// RandomPolicy places a single point that could never re-arm anyway (SKL-21).
+	// rewritten victim-safe. Deliberately leaves `cooldown` unset: no shipped debuff carries a
+	// cooldown (checked: all 30 alternatives, both datasets), and even if one did, RandomPolicy is a
+	// frozen singleton -- not AllCornerRandomPolicy or a DistributionRandomPolicy -- so
+	// samplePolicyPlacesMultiplePoints() returns false and it gets 0 spares regardless (SKL-21).
 	addOpponentDebuff(skillId: string) {
 		this._skills.push({id: skillId, p: Perspective.Other, victimSafe: true});
 		return this;
@@ -993,6 +1009,9 @@ export class RaceSolverBuilder {
 		const skilldata = this._skills.flatMap(({id,p,originWisdom,victimSafe}) => makeSkill(id, p, false, originWisdom, victimSafe));
 		this._extraSkillHooks.forEach(h => h(skilldata, horse, this._course));
 		const occurrences = new Map<string, number>();
+		// HP-7 review-4 (E-I1): victim-safe entries get their own occurrence-count and seed namespace --
+		// see the seed derivation below for why.
+		const debuffOccurrences = new Map<string, number>();
 		// SKL-21: a cooldown skill gets 3 spare candidates (+1 primary = 4 total) -- NOT a race-time
 		// guess, but the exact count all_corner_random's own policy already rolls. Per
 		// plans/condition-reference/conditions.md:125: "[all_corner_random] randomly picks four
@@ -1011,8 +1030,17 @@ export class RaceSolverBuilder {
 		const SPARES = 3;
 		const triggers = skilldata.map(sd => {
 			const key = sd.perspective != null ? this.getSamplePolicyKey(sd.skillId, sd.perspective) : sd.skillId;
-			const occurrence = occurrences.get(key) || 0;
-			occurrences.set(key, occurrence + 1);
+			// HP-7 review-4 (E-I1): count victim-safe occurrences in their own map. `occurrences` above
+			// is the shared count `_samplePolicyOverride`'s key space depends on -- addOpponentDebuff's
+			// victim-safe entries share that same `${skillId}:${perspective}` key with every other
+			// Perspective.Other add path (an opponent's own equipped copy of the same skill,
+			// addSkillAtPosition's forced-position override, ...). Counting a victim-safe entry into the
+			// shared map, even though its *sample policy* is already protected from the override below,
+			// still shifts the `occurrence` number every other same-key entry sees, which in turn shifts
+			// their RNG seed -- exactly the "policy half fixed, seed half not" gap review-3 left open.
+			const occMap = sd.victimSafe ? debuffOccurrences : occurrences;
+			const occurrence = occMap.get(key) || 0;
+			occMap.set(key, occurrence + 1);
 			// HP-7 review-3 fix 1: `_samplePolicyOverride` is keyed only by `${skillId}:${perspective}`
 			// (getSamplePolicyKey), and addSkillAtPosition's forced-position override shares that key
 			// with addOpponentDebuff's victim-safe entry for the same skill/perspective pair -- e.g.
@@ -1028,7 +1056,12 @@ export class RaceSolverBuilder {
 			// onto one point would otherwise skew the whole Skill Chart's paired comparison.
 			const sp = sd.victimSafe ? sd.samplePolicy : (this._samplePolicyOverride.get(key) || sd.samplePolicy);
 			const spares = sd.cooldown != null && samplePolicyPlacesMultiplePoints(sp) ? SPARES : 0;
-			const flat = sp.sample(sd.regions, this.nsamples, new Rule30CARng(deriveSeed(skillTriggerSeed, `${key}:${occurrence}`)), spares);
+			// HP-7 review-4 (E-I1): namespace the seed key too, for the same reason as the occurrence
+			// map above -- this is the fix for the *seed* half of the collision (see the occurrence-map
+			// comment). Only NEW (HP-7) RNG streams move: an entry that isn't victimSafe still seeds
+			// from the exact same `${key}:${occurrence}` string as before.
+			const seedKey = sd.victimSafe ? `${key}:debuff:${occurrence}` : `${key}:${occurrence}`;
+			const flat = sp.sample(sd.regions, this.nsamples, new Rule30CARng(deriveSeed(skillTriggerSeed, seedKey)), spares);
 			return {flat, spares};
 		});
 

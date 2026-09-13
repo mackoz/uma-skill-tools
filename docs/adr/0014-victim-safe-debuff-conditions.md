@@ -174,9 +174,19 @@ strategy, left to a future ticket as before.
 
 ## Consequences
 
-- `addOpponentDebuff`'s configured count is now exact per the test suite's tolerance (`toBeCloseTo`
-  with 4 decimal places) across seeds — no wisdom-roll attrition, no caster-state clause silently
-  vetoing an otherwise-landed hit.
+- `addOpponentDebuff`'s configured count is exact per the test suite's tolerance (`toBeCloseTo` with
+  4 decimal places) across seeds, **provided the victim-safe entry stays excluded from
+  `doActivateRandomGold()`'s forced-gold-activation pool** (`RaceSolver.ts`'s `goldIndices`
+  predicate checks `!skill.victimSafe`) — no wisdom-roll attrition, no caster-state clause silently
+  vetoing an otherwise-landed hit, and no gold-activation skill on the victim (e.g. an inherited
+  Adventure of 564) force-firing a pending debuff outside its real window. A round-7 review found
+  this guarantee did not yet hold: `doActivateRandomGold()` filtered on rarity and effect type only,
+  so a gold-or-Evolution incoming debuff (14 of the 30 shipped skills qualify) could be
+  force-activated by an unrelated `SkillType.ActivateRandomGold` effect on the victim, firing
+  outside its window and — because `pendingRemoval` is a `Set` keyed by bare `skillId` — only
+  removing one of N same-id configured copies, so a surviving copy fired again (N+1 drains). Fixed
+  by excluding victim-safe entries from that pool; see `test/opponent-debuff.test.ts`'s regression
+  test for the repro.
 - `VictimSafeConditions` must be extended whenever a new debuff-relevant condition term is
   identified as course/timing-shaped rather than caster-shaped; missing one *now* fails loudly via
   `test/victim-safe-condition.test.ts`'s unclassified-term check rather than quietly.

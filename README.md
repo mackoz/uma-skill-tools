@@ -106,8 +106,15 @@ against the solved horse itself. The rewritten trigger
 also always samples with `RandomPolicy` rather than whatever policy the original condition implied,
 and bypasses the wisdom roll (`checkWisdomForSkill`) entirely, since a configured debuff already
 means "this many landed," not "this many were attempted by a caster this engine isn't modeling."
-See `docs/adr/0014-victim-safe-debuff-conditions.md` for the rationale, including a target-type-18
-(`EnemyStrategy`, running-style-gated debuffs) caveat this function knowingly doesn't model.
+See `docs/adr/0014-victim-safe-debuff-conditions.md` for the rationale, including why the
+`EnemyStrategy` (target 18) running-style gate is enforced via the condition term rather than
+`isTarget()` -- the allowlist's four `running_style_count_*_otherself` terms already read the
+victim's own running style once rewritten (see above) -- and what stays latent: only a
+*hypothetical* future target-18 skill lacking that term would be unmodeled.
+
+An incoming debuff is a complete no-op outside `mode: 'compare'` -- `NoopHpPolicy.recover()`
+(`HpPolicy.ts`) is `{}`, so nothing observes the drain unless the builder was given a
+`GameHpPolicy`, which only `mode('compare')` does.
 
 ## Skill cooldowns
 

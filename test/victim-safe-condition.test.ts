@@ -11,7 +11,7 @@ const CASTER_TERMS = new Set([
 	'blocked_front_continuetime',
 	'temptation_opponent_count_behind', 'temptation_opponent_count_infront',
 ]);
-const OTHER_TARGETS = new Set([2, 4, 9, 11, 18, 19, 20, 21, 22, 23]);
+const OTHER_TARGETS = new Set([2, 4, 7, 9, 10, 11, 18, 19, 20, 21, 22, 23]);
 
 function debuffAlternatives(skills: object): any[] {
 	const out: any[] = [];

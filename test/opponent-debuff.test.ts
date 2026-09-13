@@ -5,8 +5,9 @@ import { CourseHelpers } from '../CourseData';
 import { createFixedPositionPolicy } from '../ActivationSamplePolicy';
 import courses from '../data/jp/course_data.json';
 
-// Kyoto 2000m. MUST be distanceType 3 (Mid) -- Murmur is `distance_type==3`, so a Short or
-// Mile course would make the first test's drain legitimately zero. getCourse takes a number.
+// Sapporo 2000m (course_data.json's 10104 has raceTrackId 10001, which tracknames.json maps to
+// 札幌/Sapporo). MUST be distanceType 3 (Mid) -- Murmur is `distance_type==3`, so a Short or Mile
+// course would make the first test's drain legitimately zero. getCourse takes a number.
 const COURSE_ID = 10104;
 const horse = {
 	speed: 1000, stamina: 1000, power: 1000, guts: 1000, wisdom: 1000,
@@ -85,12 +86,12 @@ describe('addOpponentDebuff', () => {
 		}
 	});
 
-	test('adding no debuffs leaves the build byte-identical', () => {
-		// Guards the regression checkpoint: addOpponentDebuff must draw no RNG when unused.
-		const a = runOnce([]);
-		const b = runOnce([]);
-		expect(a.hp).toBe(b.hp);
-	});
+	// HP-7 review-4 (M2): the previous version of this test ran runOnce([]) twice and compared the
+	// two results -- true by construction of the seeded builder regardless of whether
+	// addOpponentDebuff draws RNG when unused, so it asserted nothing. The real guard against
+	// addOpponentDebuff drawing RNG when the debuff list is empty is test/regression/check.ts's
+	// full checkpoint replay (956,108 assertions across the fixed-seed corpus), which would fail if
+	// an unused code path started consuming RNG and shifting every subsequent draw.
 
 	// HP-7 review-3 fix 1 (Important): _samplePolicyOverride is keyed only by `${skillId}:${perspective}`
 	// (getSamplePolicyKey), so addSkillAtPosition's forced-position policy and addOpponentDebuff's
@@ -118,7 +119,7 @@ describe('addOpponentDebuff', () => {
 		b.addOpponentDebuff('201162');
 
 		const activations: number[] = [];
-		(b as any).onSkillActivate((s: RaceSolver, skillId: string) => {
+		b.onSkillActivate((s: RaceSolver, skillId: string) => {
 			if (skillId === '201162') activations.push(s.pos);
 		});
 
@@ -164,5 +165,106 @@ describe('addOpponentDebuff running-style gating (target-18 debuffs)', () => {
 		const clean = runOnceWithStrategy('Oonige', []);
 		const hit = runOnceWithStrategy('Oonige', ['200831']);
 		expect(clean.hp - hit.hp).toBeCloseTo(clean.maxHp * 0.01, 4);
+	});
+});
+
+// HP-7 review-4 (C1, Critical): doActivateRandomGold()'s goldIndices predicate used to check only
+// rarity and effect type, so any victim carrying a SkillType.ActivateRandomGold (37) effect (e.g.
+// 110071, Summer Goldship's unique "Adventure of 564") could force-activate a pending incoming
+// debuff -- outside its real proc window, and since pendingRemoval is a Set keyed by bare skillId,
+// only one of N same-id configured copies got removed, so a surviving copy fired again later (N+1
+// drains). The fix adds `!skill.victimSafe` to the predicate.
+describe('addOpponentDebuff is immune to ActivateRandomGold force-activation (C1)', () => {
+	test('2 configured copies of a gold incoming debuff still activate exactly twice, inside their real window, when the victim carries an ActivateRandomGold skill', () => {
+		const course = CourseHelpers.getCourse(COURSE_ID);
+		// phase_random==2 window for All-Seeing Eyes (201441) on this 2000m course.
+		const windowStart = CourseHelpers.phaseStart(course.distance, 2);
+		const windowEnd = CourseHelpers.phaseEnd(course.distance, 2);
+
+		const b = new RaceSolverBuilder(1).seed(1)
+			.course(course)
+			.mode('compare')
+			.skillWisdomCheck(false)
+			.horse(horse as any);
+		// Forced early (well before the phase-2 window) so that if 201441 were still
+		// force-activatable, it would fire here instead of its real window. Written out via addSkill's
+		// explicit samplePolicy parameter rather than addSkillAtPosition -- see the comment on the
+		// collision test above about its internal require() not resolving under vitest's ESM loader.
+		b.addSkill('110071', Perspective.Self, createFixedPositionPolicy(100));
+		b.addOpponentDebuff('201441');
+		b.addOpponentDebuff('201441');
+
+		const activations: number[] = [];
+		b.onSkillActivate((s: RaceSolver, skillId: string) => {
+			if (skillId === '201441') activations.push(s.pos);
+		});
+
+		const s = b.build().next(false).value as RaceSolver;
+		s.initUmas([]);
+		while (s.pos < s.course.distance) s.step(1 / 15);
+
+		expect(activations.length).toBe(2);
+		for (const pos of activations) {
+			expect(pos).toBeGreaterThanOrEqual(windowStart);
+			expect(pos).toBeLessThanOrEqual(windowEnd);
+		}
+	});
+});
+
+// HP-7 review-4 (M7): the feature's headline claim is that a debuff fires at its REAL proc window
+// -- the only positional assertion in this file before this was the forced-position collision
+// test's `Math.abs(pos - 500) < 5`. These pin an early-phase debuff (Murmur, phase 1) and a
+// late-phase debuff (All-Seeing Eyes, phase 2) each landing inside the window
+// victimSafeCondition() actually computes, which is the one assertion class that would have caught
+// C1's out-of-window firing on its own.
+describe('addOpponentDebuff activates inside its real proc window (M7)', () => {
+	test('Murmur (201162) activates inside phase 1', () => {
+		const course = CourseHelpers.getCourse(COURSE_ID);
+		const windowStart = CourseHelpers.phaseStart(course.distance, 1);
+		const windowEnd = CourseHelpers.phaseEnd(course.distance, 1);
+
+		const b = new RaceSolverBuilder(1).seed(1)
+			.course(course)
+			.mode('compare')
+			.horse(horse as any);
+		b.addOpponentDebuff('201162');
+
+		const activations: number[] = [];
+		b.onSkillActivate((s: RaceSolver, skillId: string) => {
+			if (skillId === '201162') activations.push(s.pos);
+		});
+
+		const s = b.build().next(false).value as RaceSolver;
+		s.initUmas([]);
+		while (s.pos < s.course.distance) s.step(1 / 15);
+
+		expect(activations.length).toBe(1);
+		expect(activations[0]).toBeGreaterThanOrEqual(windowStart);
+		expect(activations[0]).toBeLessThan(windowEnd);
+	});
+
+	test('All-Seeing Eyes (201441) activates inside phase 2', () => {
+		const course = CourseHelpers.getCourse(COURSE_ID);
+		const windowStart = CourseHelpers.phaseStart(course.distance, 2);
+		const windowEnd = CourseHelpers.phaseEnd(course.distance, 2);
+
+		const b = new RaceSolverBuilder(1).seed(1)
+			.course(course)
+			.mode('compare')
+			.horse(horse as any);
+		b.addOpponentDebuff('201441');
+
+		const activations: number[] = [];
+		b.onSkillActivate((s: RaceSolver, skillId: string) => {
+			if (skillId === '201441') activations.push(s.pos);
+		});
+
+		const s = b.build().next(false).value as RaceSolver;
+		s.initUmas([]);
+		while (s.pos < s.course.distance) s.step(1 / 15);
+
+		expect(activations.length).toBe(1);
+		expect(activations[0]).toBeGreaterThanOrEqual(windowStart);
+		expect(activations[0]).toBeLessThan(windowEnd);
 	});
 });

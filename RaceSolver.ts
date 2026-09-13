@@ -1841,9 +1841,15 @@ export class RaceSolver {
 		// timer on a forced pick -- resetting it would let a forced activation extend a cooldown,
 		// which is strictly worse than just leaving the entry ineligible until it naturally expires.
 		const goldIndices = this.pendingSkills.reduce((acc, skill, i) => {
+			// HP-7 review-4 (C1): an incoming debuff (victimSafe) is an opponent's skill landed on
+			// you, not a gold skill you chose to activate -- letting it be force-activated here fires
+			// it outside the proc window victimSafeCondition() computed, and since pendingRemoval is a
+			// Set keyed by bare skillId, only one of N same-id configured copies gets removed, so a
+			// surviving copy still activates again later -- an extra, uncounted drain.
 			if ((skill.rarity == SkillRarity.Gold || skill.rarity == SkillRarity.Evolution) &&
 				skill.effects.every(ef => ef.type > SkillType.WisdomUp) &&
-				!(skill.cooldownTimer != null && skill.cooldownTimer.t < 0)) acc.push(i);
+				!(skill.cooldownTimer != null && skill.cooldownTimer.t < 0) &&
+				!skill.victimSafe) acc.push(i);
 			return acc;
 		}, []);
 		for (let i = goldIndices.length; --i >= 0;) {
