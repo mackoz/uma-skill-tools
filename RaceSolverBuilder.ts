@@ -696,7 +696,9 @@ export class RaceSolverBuilder {
 					const key = sd.perspective != null ? this.getSamplePolicyKey(sd.skillId, sd.perspective) : sd.skillId;
 					const occurrence = occurrences.get(key) || 0;
 					occurrences.set(key, occurrence + 1);
-					const sp = this._samplePolicyOverride.get(key) || sd.samplePolicy;
+					// HP-7 review-3 fix 1: a victim-safe debuff's forced RandomPolicy (buildSkillData)
+					// must never be overridable -- see the identical guard and comment in build() below.
+					const sp = sd.victimSafe ? sd.samplePolicy : (this._samplePolicyOverride.get(key) || sd.samplePolicy);
 					const spares = sd.cooldown != null && samplePolicyPlacesMultiplePoints(sp) ? SPARES : 0;
 					const flat = sp.sample(sd.regions, this.nsamples, new Rule30CARng(deriveSeed(triggerSeed, `${key}:${occurrence}`)), spares);
 					return {flat, spares};
@@ -1011,7 +1013,20 @@ export class RaceSolverBuilder {
 			const key = sd.perspective != null ? this.getSamplePolicyKey(sd.skillId, sd.perspective) : sd.skillId;
 			const occurrence = occurrences.get(key) || 0;
 			occurrences.set(key, occurrence + 1);
-			const sp = this._samplePolicyOverride.get(key) || sd.samplePolicy;
+			// HP-7 review-3 fix 1: `_samplePolicyOverride` is keyed only by `${skillId}:${perspective}`
+			// (getSamplePolicyKey), and addSkillAtPosition's forced-position override shares that key
+			// with addOpponentDebuff's victim-safe entry for the same skill/perspective pair -- e.g.
+			// uma A's own equipped debuff, forced to a position via the always-visible "Force @
+			// position" input (addSkillAtPosition(id, pos, Perspective.Other, ...)), and uma B's Stam
+			// Debuff dialog configuring the same skill id as an incoming debuff on the same builder
+			// (addOpponentDebuff(id), also Perspective.Other) collide on `${id}:Other`. A prior design
+			// note claimed setting `samplePolicy` on the returned SkillData already avoided this --
+			// wrong: the override map is consulted first and wins regardless of what `sd.samplePolicy`
+			// holds. A victim-safe debuff's forced RandomPolicy (buildSkillData) must therefore never
+			// be overridable, so it's checked before consulting the map at all -- an unrelated
+			// forced-position input silently collapsing every sampled activation of an incoming debuff
+			// onto one point would otherwise skew the whole Skill Chart's paired comparison.
+			const sp = sd.victimSafe ? sd.samplePolicy : (this._samplePolicyOverride.get(key) || sd.samplePolicy);
 			const spares = sd.cooldown != null && samplePolicyPlacesMultiplePoints(sp) ? SPARES : 0;
 			const flat = sp.sample(sd.regions, this.nsamples, new Rule30CARng(deriveSeed(skillTriggerSeed, `${key}:${occurrence}`)), spares);
 			return {flat, spares};

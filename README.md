@@ -96,9 +96,13 @@ Value scaling (`ability_value_usage`) and duration scaling (`ability_time_usage`
 `RaceSolverBuilder.addOpponentDebuff(skillId)` lets a caller apply a stamina debuff an opponent
 lands on the solved horse, without simulating that opponent at all: the skill is added with
 `Perspective.Other` (so the effect targets the solved horse but it gets no caster credit) and its
-condition string is rewritten to drop caster-state clauses (order, running style, blocking, and
-similar) before it's evaluated against the solved horse itself — everything else in the condition
-(`phase`, `phase_random`, `accumulatetime`, `distance_type`) is kept as-is. The rewritten trigger
+condition string is rewritten to keep only an **allowlist** of victim-safe terms — `phase`,
+`phase_random`, `accumulatetime`, `distance_type` (course-shaped, not caster-shaped), and the four
+`running_style_count_{nige,senko,sashi,oikomi}_otherself` terms (these read the *victim's* own
+running style once rewritten, not the caster's, despite the "_otherself" suffix looking
+caster-shaped) — dropping everything else that describes the caster (order, running style via the
+plain `running_style` term, blocking, dueling, and similar) before the condition is evaluated
+against the solved horse itself. The rewritten trigger
 also always samples with `RandomPolicy` rather than whatever policy the original condition implied,
 and bypasses the wisdom roll (`checkWisdomForSkill`) entirely, since a configured debuff already
 means "this many landed," not "this many were attempted by a caster this engine isn't modeling."

@@ -42,6 +42,17 @@ to treat as "no condition" (parser has no other representation for it).
 rewrite so it only applies to skills added via `addOpponentDebuff` — a horse's own skills are
 evaluated against their true caster (itself) and need no rewriting.
 
+**`.precondition` is not covered.** `buildSkillData()` parses `skill.precondition` directly
+against the builder's own horse regardless of `victimSafe`, the same way `.condition` used to
+before this rewrite — only `.condition` is routed through `victimSafeCondition()`. This is latent,
+not fixed: no shipped debuff (JP or Global) carries a precondition
+(`test/victim-safe-condition.test.ts`'s "no shipped debuff alternative carries a precondition"
+test, HP-7 review round 3, pins this so it fails loudly the moment one ships), but a future debuff
+that gained a caster-shaped precondition (order, running style, etc.) would be evaluated against
+the victim unmodified, the exact denylist-style silent-under-fire failure mode this ADR's
+"Allowlist over denylist" section argues against for `.condition`. Extending `victimSafeCondition`
+coverage to `.precondition` is left to whenever a shipped skill actually needs it.
+
 ### Allowlist over denylist
 
 The two failure modes an unclassified term can produce are not symmetric, and that asymmetry is
@@ -75,6 +86,20 @@ a uniform draw over the (possibly widened, post-strip) window models "landed som
 window" instead of "landed at the first possible instant of this window every single sample" —
 the latter would understate the real HP loss whenever the drain has time-dependent duration
 effects layered on top of a fixed pin point.
+
+Peer-review fix (HP-7, review round 3): this section previously claimed that setting
+`samplePolicy: RandomPolicy` on the `SkillData` `buildSkillData()` returns "avoids the collision
+entirely" with `_samplePolicyOverride` (the map `addSkillAtPosition`'s forced-position policy is
+stashed in, keyed by `getSamplePolicyKey(skillId, perspective)` — just `${skillId}:${perspective}`,
+with no `victimSafe` component). That was wrong: `build()` and `prepPacerTriggers()` both read
+`this._samplePolicyOverride.get(key) || sd.samplePolicy` — the override wins whenever a key is
+present, regardless of what `sd.samplePolicy` holds. Since `addOpponentDebuff` and
+`addSkillAtPosition` share that same key for the same skill id and perspective, a forced-position
+input on one uma's builder (reachable through the always-visible "Force @ position" field, not an
+advanced or hidden control) and a Stam Debuff dialog entry for the same skill id on the same
+builder silently collide: the forced position wins and collapses every sampled activation of the
+incoming debuff onto that one point. Both call sites now check `sd.victimSafe` before consulting
+the override map at all, so a victim-safe debuff's forced `RandomPolicy` can never be overridden.
 
 ### Wisdom bypass (`victimSafe` on `PendingSkill`)
 
