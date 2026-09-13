@@ -24,13 +24,19 @@ would exclude the victim" case, which pins exactly this).
 `victimSafeCondition()` (`RaceSolverBuilder.ts`) rewrites a debuff's condition string before it
 reaches the parser, keeping only clauses built from an **allowlist** of terms
 (`VictimSafeConditions`, ANCHOR `victim-safe-condition-allowlist`): `phase`, `phase_random`,
-`accumulatetime`, `distance_type`. `distance_type` is course-shaped, not caster-shaped — it says
-which distance category the *course itself* is, true or false identically for every horse on that
-course, so it carries no caster-vs-victim distinction to get wrong. Everything else describes the
-caster (order, running style, blocking, dueling, temptation state, and so on) and is stripped.
-Filtering happens per `&`-clause within each `@`-branch; a branch that loses every clause is
-unconditional, and a condition where *every* branch reduces that way returns `''` for the caller to
-treat as "no condition" (parser has no other representation for it).
+`accumulatetime`, `distance_type`, and `running_style_count_{nige,senko,sashi,oikomi}_otherself`.
+`distance_type` is course-shaped, not caster-shaped — it says which distance category the *course
+itself* is, true or false identically for every horse on that course, so it carries no
+caster-vs-victim distinction to get wrong. The four `running_style_count_*_otherself` terms look
+caster-shaped (the "_otherself" suffix) but are not: `ActivationConditions.ts` implements each as a
+`valueFilter` reading `horse.strategy` off the builder's own horse, which under this rewrite *is*
+the victim, so unmodified they already ask "is the victim a Front Runner/Pace Chaser/Late
+Surger/End Closer" — exactly the running-style gate the Subdued/Flustered debuff family (`200831`
+et al.) is meant to apply to its victim. Everything else describes the caster (order, running
+style via the plain `running_style` term, blocking, dueling, temptation state, and so on) and is
+stripped. Filtering happens per `&`-clause within each `@`-branch; a branch that loses every clause
+is unconditional, and a condition where *every* branch reduces that way returns `''` for the caller
+to treat as "no condition" (parser has no other representation for it).
 
 `victimSafe` (`buildSkillData()`'s parameter, threaded onto `SkillData`/`PendingSkill`) gates this
 rewrite so it only applies to skills added via `addOpponentDebuff` — a horse's own skills are
@@ -108,8 +114,8 @@ style; narrowing that is left to a future ticket.
   asymmetry argued above — a denylist's blind spot silently under-fires, an allowlist's silently
   over-fires-and-is-caught-by-test. Given the game keeps adding condition terms over time (the same
   open-set concern `docs/adr/0013-value-scaling-identity-fallthrough.md` raises for scaling codes),
-  the allowlist's fail-safe direction was judged worth the up-front cost of enumerating four terms
-  instead of an unbounded caster vocabulary.
+  the allowlist's fail-safe direction was judged worth the up-front cost of enumerating a handful
+  of terms instead of an unbounded caster vocabulary.
 - **Leave the caster's original sample policy in place instead of forcing `RandomPolicy`.** Rejected
   because it silently mispredicts timing precision for exactly the conditions this rewrite is
   designed to widen (`phase`/`phase_random`) — `ImmediatePolicy`'s single boundary-pinned sample is

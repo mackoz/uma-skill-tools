@@ -289,8 +289,22 @@ function samplePolicyPlacesMultiplePoints(sp: ActivationSamplePolicy): boolean {
 // that slipped past a denylist would evaluate against the victim and make that debuff silently
 // never fire. Over-stripping instead widens the firing window -- wrong, but observable, and
 // test/victim-safe-condition.test.ts fails on any unclassified term either way.
+//
+// running_style_count_{nige,senko,sashi,oikomi}_otherself are victim-safe DESPITE the "_otherself"
+// name, and must NOT be stripped: ActivationConditions.ts's own comment above their entries
+// (:1001-1003) explains these are used exclusively on debuffs, where they are added to /us/ from
+// the "other" perspective -- and each is implemented as
+// `valueFilter((_, horse) => +StrategyHelpers.strategyMatches(horse.strategy, Strategy.X))`, i.e.
+// it reads `horse.strategy` off the builder's OWN horse, which under addOpponentDebuff's rewrite
+// IS the victim. So evaluated unmodified, these already ask "is the victim a Front
+// Runner/Pace Chaser/Late Surger/End Closer" -- exactly the victim-safe question a
+// running-style-gated debuff (e.g. the Subdued/Flustered family, 200831 et al.) needs answered.
+// Stripping them (as this allowlist wrongly did before HP-7's fix) makes those debuffs apply to
+// every running style instead of gating on the victim's, per ActivationConditions.ts.
 export const VictimSafeConditions: ReadonlySet<string> = new Set([
-	'phase', 'phase_random', 'accumulatetime', 'distance_type'
+	'phase', 'phase_random', 'accumulatetime', 'distance_type',
+	'running_style_count_nige_otherself', 'running_style_count_senko_otherself',
+	'running_style_count_sashi_otherself', 'running_style_count_oikomi_otherself',
 ]);
 
 // ConditionParser's grammar is `Or ::= And '@' Or | And` with no parentheses, so `&` binds tighter

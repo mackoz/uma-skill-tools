@@ -7,8 +7,6 @@ import skills from '../data/jp/skill_data.json';
 // evaluating against the victim (denylist failure) or widening the window (allowlist failure).
 const CASTER_TERMS = new Set([
 	'order', 'order_rate', 'running_style', 'change_order_onetime',
-	'running_style_count_nige_otherself', 'running_style_count_senko_otherself',
-	'running_style_count_sashi_otherself', 'running_style_count_oikomi_otherself',
 	'blocked_front_continuetime',
 	'temptation_opponent_count_behind', 'temptation_opponent_count_infront',
 ]);
@@ -35,7 +33,7 @@ describe('victimSafeCondition', () => {
 		expect(victimSafeCondition('phase==1&order_rate<=50&temptation_opponent_count_behind>=1'))
 			.toBe('phase==1');                                        // Trick (Front), unregistered term
 		expect(victimSafeCondition('running_style_count_nige_otherself>=1&phase_random==0&accumulatetime>=5'))
-			.toBe('phase_random==0&accumulatetime>=5');                // Subdued Front Runners
+			.toBe('running_style_count_nige_otherself>=1&phase_random==0&accumulatetime>=5'); // Subdued Front Runners: victim-safe, kept
 	});
 
 	test('filters each @-branch independently (& binds tighter than @)', () => {
