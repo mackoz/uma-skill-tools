@@ -60,4 +60,34 @@ describe('victimSafeCondition', () => {
 	test('no shipped debuff condition strips to empty', () => {
 		for (const c of debuffConditions()) expect(victimSafeCondition(c)).not.toBe('');
 	});
+
+	// Peer-review fix (HP-7 review round 2, Important 5): ActivationConditions.ts's own comment
+	// above these four entries warns "abusing valueFilter like this only works because these
+	// conditions are used like running_style_count_nige_otherself>=1" -- each is implemented as a
+	// bare valueFilter that only reads the comparison's truthiness, not its magnitude, so a future
+	// data refresh shipping e.g. `>=2` on one of these terms would keep it classified (the
+	// unclassified-term tripwire above stays green) but silently never fire (1 >= 2 is false for
+	// every victim) -- precisely the invisible under-firing this file's own "Allowlist over
+	// denylist" comment argues the allowlist protects against for every OTHER term. This asserts
+	// the operator these four terms are shipped with, which the unclassified-term check alone
+	// cannot: it strips the operator+value before checking term names.
+	test('running_style_count_*_otherself terms are shipped only as >=1, never a different operator/value', () => {
+		const STYLE_TERMS = [
+			'running_style_count_nige_otherself',
+			'running_style_count_senko_otherself',
+			'running_style_count_sashi_otherself',
+			'running_style_count_oikomi_otherself',
+		];
+		let matched = 0;
+		for (const c of debuffConditions()) {
+			for (const clause of c.split(/[&@]/)) {
+				const term = clause.replace(/[<>=!].*/, '');
+				if (STYLE_TERMS.includes(term)) {
+					matched++;
+					expect(clause).toBe(`${term}>=1`);
+				}
+			}
+		}
+		expect(matched).toBeGreaterThan(0); // sanity: the shipped data still exercises this at all
+	});
 });

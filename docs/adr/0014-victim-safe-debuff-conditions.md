@@ -89,18 +89,38 @@ for any `PendingSkill` with `victimSafe` set, immediately after its existing
 once its (rewritten) trigger and dynamic condition are satisfied — pinned by
 `test/opponent-debuff.test.ts`'s wisdom test, run across 25 seeds.
 
-### Target-type 18 (`EnemyStrategy`) running-style gate: knowingly not modelled
+### Target-type 18 (`EnemyStrategy`) running-style gate: enforced via the condition term, not `isTarget()`
 
 Some debuffs additionally restrict by the *victim's* running style via `SkillTarget` type 18
 (`EnemyStrategy` — "only opponents of running style X"), which is a property of the effect's
-target filter, not of the condition string `victimSafeCondition()` rewrites. `addOpponentDebuff`
-does not check this: a debuff gated to only affect, say, Nige opponents will still apply through
-`addOpponentDebuff` regardless of the solved horse's own running style. This is a known, deliberate
-gap rather than an oversight — modeling it correctly needs `buildSkillEffects()`'s `isTarget()`
-check (which already handles `SkillTarget.Self`/`SkillTarget.All` for perspective) extended with
-the solved horse's own strategy, and HP-7 didn't need it for its own scope. A caller configuring a
-target-type-18 debuff via `addOpponentDebuff` today gets it applied unconditionally by running
-style; narrowing that is left to a future ticket.
+target filter. `buildSkillEffects()`'s `isTarget()` check does not look at it — it only ever
+compares `SkillTarget.Self`/`SkillTarget.All` against `Perspective`, and has not been extended to
+read type 18 or the solved horse's own strategy at all.
+
+Peer-review fix (HP-7, review round 2): this section previously said a target-18 debuff "will
+still apply … regardless of the solved horse's own running style" through `addOpponentDebuff`.
+That was true when written, but the sibling peer-review fix restoring
+`running_style_count_{nige,senko,sashi,oikomi}_otherself` to `VictimSafeConditions` (see "Decision"
+above) made it false: **every shipped `target: 18` effect also carries one of these four terms in
+its condition** — verified directly against both datasets, identically: all 12 shipped effects
+using `SkillTarget.EnemyStrategy` (`200831`/`200841`/`200851` gated on `_nige_`,
+`200861`/`200871`/`200881` on `_senko_`, `200891`/`200901`/`200911` on `_sashi_`, and
+`200921`/`200931`/`200941` on `_oikomi_`) each pair `target: 18` with exactly one
+`running_style_count_*_otherself>=1` clause — the stamina-debuff family this ADR is centrally about
+(`200831`/`200841`/`200861`/`200871`/`200891`/`200901`/`200921`/`200931`, effect type 9) plus a
+sibling non-stamina family at the same 12-skill target-18 surface (`200851`/`200881`/`200911`/
+`200941`, effect type 21) that isn't itself in scope here but shares the same condition shape.
+Since that clause is now kept (not stripped) and evaluates `strategyMatches(victim.strategy, Strategy.X)` against the
+victim — precisely the `EnemyStrategy` restriction the target type names — the gate **is** enforced
+today, for every shipped skill, just via the condition term rather than via `isTarget()`.
+
+`isTarget()` remaining unextended for type 18 is still a real, latent gap — a *hypothetical* future
+debuff that used `SkillTarget.EnemyStrategy` without also carrying a matching
+`running_style_count_*_otherself` condition term would apply unconditionally by running style,
+same as this section originally described. No shipped skill relies on that combination today; a
+caller that needs `isTarget()` itself to enforce the gate (independent of what condition terms a
+skill happens to carry) still needs `buildSkillEffects()` extended with the solved horse's own
+strategy, left to a future ticket as before.
 
 ## Rejected alternatives
 
@@ -135,6 +155,21 @@ style; narrowing that is left to a future ticket.
 - `VictimSafeConditions` must be extended whenever a new debuff-relevant condition term is
   identified as course/timing-shaped rather than caster-shaped; missing one *now* fails loudly via
   `test/victim-safe-condition.test.ts`'s unclassified-term check rather than quietly.
-- Target-type 18's running-style gate remains unmodelled — a caller relying on `addOpponentDebuff`
-  to respect it will get the debuff unconditionally, regardless of the solved horse's own strategy,
-  until a future ticket extends `isTarget()` to check it.
+- Target-type 18's running-style gate is enforced today for every shipped skill, via the
+  `running_style_count_*_otherself` condition term every one of them happens to also carry — not
+  via `isTarget()`, which remains unextended for `SkillTarget.EnemyStrategy` specifically. A
+  hypothetical future skill using target-18 *without* that condition term would get the debuff
+  applied unconditionally by running style; a future ticket extending `isTarget()` itself would
+  close that gap independent of what condition terms a skill happens to carry.
+- `VictimSafeConditions` carries a load-bearing assumption of its own for these four terms
+  specifically: each is implemented in `ActivationConditions.ts` as a bare `valueFilter` that reads
+  only the operator's *truthiness* of the comparison, not its magnitude, and is only ever shipped
+  as `>=1` (`ActivationConditions.ts`'s own comment above the entries notes this: "abusing
+  `valueFilter` like this only works because these conditions are used like
+  `running_style_count_nige_otherself>=1`"). A future data refresh shipping `>=2` on one of these
+  terms would keep the clause on the allowlist (still classified, so the tripwire this ADR's
+  "Allowlist over denylist" section describes stays green) but silently never fire — `1 >= 2` is
+  false for every victim, which is exactly the invisible under-firing that section argues an
+  allowlist protects against for every *other* term. `test/victim-safe-condition.test.ts` asserts
+  these four terms appear only as `>=1` across the shipped data specifically to catch this before
+  it ships, since the general unclassified-term tripwire alone would not.

@@ -292,7 +292,7 @@ function samplePolicyPlacesMultiplePoints(sp: ActivationSamplePolicy): boolean {
 //
 // running_style_count_{nige,senko,sashi,oikomi}_otherself are victim-safe DESPITE the "_otherself"
 // name, and must NOT be stripped: ActivationConditions.ts's own comment above their entries
-// (:1001-1003) explains these are used exclusively on debuffs, where they are added to /us/ from
+// explains these are used exclusively on debuffs, where they are added to /us/ from
 // the "other" perspective -- and each is implemented as
 // `valueFilter((_, horse) => +StrategyHelpers.strategyMatches(horse.strategy, Strategy.X))`, i.e.
 // it reads `horse.strategy` off the builder's OWN horse, which under addOpponentDebuff's rewrite
