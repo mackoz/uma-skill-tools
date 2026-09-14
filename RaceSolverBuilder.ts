@@ -3,7 +3,7 @@ import { CourseData, CourseHelpers, DistanceType } from './CourseData';
 import { Region, RegionList } from './Region';
 import { deriveSeed, Rule30CARng, SeededRng } from './Random';
 import { Conditions, random, immediate, noopRandom, noopImmediate } from './ActivationConditions';
-import { ActivationSamplePolicy, ImmediatePolicy, AllCornerRandomPolicy, DistributionRandomPolicy } from './ActivationSamplePolicy';
+import { ActivationSamplePolicy, ImmediatePolicy, RandomPolicy, AllCornerRandomPolicy, DistributionRandomPolicy } from './ActivationSamplePolicy';
 import { getParser } from './ConditionParser';
 import { RaceSolver, RaceState, PendingSkill, DynamicCondition, SkillType, SkillTypeValues, SkillRarity, SkillEffect, Perspective, PosKeepMode } from './RaceSolver';
 import { Mood, GroundCondition, Weather, Season, Time, Grade, RaceParameters } from './RaceParameters';
@@ -253,6 +253,7 @@ export interface SkillData {
 	effects: SkillEffect[],
 	cooldown?: number
 	originWisdom?: number
+	victimSafe?: boolean
 }
 
 // SKL-21. Whether a sample policy actually places more than one candidate trigger point, i.e.
@@ -278,6 +279,46 @@ function samplePolicyPlacesMultiplePoints(sp: ActivationSamplePolicy): boolean {
 	return sp === AllCornerRandomPolicy || sp instanceof DistributionRandomPolicy;
 }
 
+// ANCHOR: victim-safe-condition-allowlist
+// Terms that say WHEN a debuff lands or WHICH COURSES the skill can exist on. Everything else in a
+// debuff's condition describes the *caster* -- their order, running style, who is blocking them --
+// and buildSkillData evaluates conditions against the builder's own horse, i.e. the victim. See
+// docs/adr/0014-victim-safe-debuff-conditions.md.
+//
+// Allowlist rather than denylist, deliberately: a caster term introduced by a future data refresh
+// that slipped past a denylist would evaluate against the victim and make that debuff silently
+// never fire. Over-stripping instead widens the firing window -- wrong, but observable, and
+// test/victim-safe-condition.test.ts fails on any unclassified term either way.
+//
+// running_style_count_{nige,senko,sashi,oikomi}_otherself are victim-safe DESPITE the "_otherself"
+// name, and must NOT be stripped: ActivationConditions.ts's own comment above their entries
+// explains these are used exclusively on debuffs, where they are added to /us/ from
+// the "other" perspective -- and each is implemented as
+// `valueFilter((_, horse) => +StrategyHelpers.strategyMatches(horse.strategy, Strategy.X))`, i.e.
+// it reads `horse.strategy` off the builder's OWN horse, which under addOpponentDebuff's rewrite
+// IS the victim. So evaluated unmodified, these already ask "is the victim a Front
+// Runner/Pace Chaser/Late Surger/End Closer" -- exactly the victim-safe question a
+// running-style-gated debuff (e.g. the Subdued/Flustered family, 200831 et al.) needs answered.
+// Stripping them (as this allowlist wrongly did before HP-7's fix) makes those debuffs apply to
+// every running style instead of gating on the victim's, per ActivationConditions.ts.
+export const VictimSafeConditions: ReadonlySet<string> = new Set([
+	'phase', 'phase_random', 'accumulatetime', 'distance_type',
+	'running_style_count_nige_otherself', 'running_style_count_senko_otherself',
+	'running_style_count_sashi_otherself', 'running_style_count_oikomi_otherself',
+]);
+
+// ConditionParser's grammar is `Or ::= And '@' Or | And` with no parentheses, so `&` binds tighter
+// than `@` and each `@`-branch's `&`-clauses filter independently. A branch that keeps nothing is
+// unconditional, which makes the whole disjunction unconditional -- returned as '' for the caller
+// to treat as "no condition". No shipped debuff hits that case (pinned by the test).
+export function victimSafeCondition(condition: string): string {
+	const branches = condition.split('@').map(branch =>
+		branch.split('&')
+			.filter(clause => VictimSafeConditions.has(clause.replace(/[<>=!].*/, '')))
+			.join('&'));
+	return branches.some(b => b.length === 0) ? '' : branches.join('@');
+}
+
 function isTarget(self: Perspective, targetType: SkillTarget) {
 	return targetType == SkillTarget.All || self == Perspective.Any || ((self == Perspective.Self) == (targetType == SkillTarget.Self));
 }
@@ -293,7 +334,7 @@ function buildSkillEffects(skill, perspective: Perspective) {
 	}));
 }
 
-export function buildSkillData(horse: HorseParameters, raceParams: PartialRaceParameters, course: CourseData, wholeCourse: RegionList, parser: {parse: any, tokenize: any}, skillId: string, perspective: Perspective, ignoreNullEffects: boolean = false, originWisdom?: number) {
+export function buildSkillData(horse: HorseParameters, raceParams: PartialRaceParameters, course: CourseData, wholeCourse: RegionList, parser: {parse: any, tokenize: any}, skillId: string, perspective: Perspective, ignoreNullEffects: boolean = false, originWisdom?: number, victimSafe: boolean = false) {
 	if (!(skillId in skills)) {
 		throw new Error('bad skill ID ' + skillId);
 	}
@@ -315,8 +356,23 @@ export function buildSkillData(horse: HorseParameters, raceParams: PartialRacePa
 			}
 		}
 
-		const op = parser.parse(parser.tokenize(skill.condition));
-		const [regions, extraCondition] = op.apply(full, course, horse, extra);
+		// HP-7: an incoming debuff's condition is rewritten to drop caster-state terms before it is
+		// parsed -- see victimSafeCondition above. A fully-stripped condition ('') means the skill
+		// is unconditional over `full`, which the parser has no representation for, so short-circuit.
+		const conditionText = victimSafe ? victimSafeCondition(skill.condition) : skill.condition;
+		let regions: RegionList, extraCondition: DynamicCondition, samplePolicy: ActivationSamplePolicy;
+		if (victimSafe && conditionText === '') {
+			regions = full;
+			extraCondition = (_) => true;
+			samplePolicy = RandomPolicy;
+		} else {
+			const op = parser.parse(parser.tokenize(conditionText));
+			[regions, extraCondition] = op.apply(full, course, horse, extra);
+			// Stripping a randomizing caster term can leave a policy that fires at the exact region
+			// boundary every sample (bare `phase` carries ImmediatePolicy). A debuff lands at an
+			// arbitrary moment in its window, so force a uniform draw.
+			samplePolicy = victimSafe ? RandomPolicy : op.samplePolicy;
+		}
 		if (regions.length == 0) {
 			continue;
 		}
@@ -340,12 +396,13 @@ export function buildSkillData(horse: HorseParameters, raceParams: PartialRacePa
 				perspective: perspective,
 				// for some reason 1*/2* uniques, 1*/2* upgraded to 3*, and naturally 3* uniques all have different rarity (3, 4, 5 respectively)
 				rarity: rarity >= 3 && rarity <= 5 ? 3 : rarity,
-				samplePolicy: op.samplePolicy,
+				samplePolicy,
 				regions: regions,
 				extraCondition: extraCondition,
 				effects: effects,
 				cooldown: skill.cooldown,
-				originWisdom: originWisdom
+				originWisdom: originWisdom,
+				victimSafe: victimSafe
 			});
 		}
 	}
@@ -369,7 +426,8 @@ export function buildSkillData(horse: HorseParameters, raceParams: PartialRacePa
 			regions: afterEnd,
 			extraCondition: (_) => false,
 			effects: effects,
-			originWisdom: originWisdom
+			originWisdom: originWisdom,
+			victimSafe: victimSafe
 		}];
 	}
 }
@@ -450,7 +508,7 @@ export class RaceSolverBuilder {
 	_rng: SeededRng
 	_seed: number
 	_parser: {parse: any, tokenize: any}
-	_skills: {id: string, p: Perspective, originWisdom?: number}[]
+	_skills: {id: string, p: Perspective, originWisdom?: number, victimSafe?: boolean}[]
 	_samplePolicyOverride: Map<string, ActivationSamplePolicy>
 	_extraSkillHooks: ((skilldata: SkillData[], horse: HorseParameters, course: CourseData) => void)[]
 	_onSkillActivate: (state: RaceSolver, skillId: string) => void
@@ -625,6 +683,10 @@ export class RaceSolverBuilder {
 			if (this._pacerSkillIds.length > 0) {
 				const triggerSeed = deriveSeed(baseSeed, `pacer-triggers:${slot}`);
 				const occurrences = new Map<string, number>();
+				// HP-7 review-4 (E-I1): victim-safe entries get their own occurrence-count and seed
+				// namespace -- see the identical map and the full rationale at the same site in build()
+				// below.
+				const debuffOccurrences = new Map<string, number>();
 				// SKL-21: identical spares treatment to build()'s main sampling -- a cooldown skill on a
 				// pacemaker must be able to activate more than once too. SPARES=3 (+1 primary = 4
 				// candidates) matches all_corner_random's own four-point roll exactly -- see
@@ -637,11 +699,34 @@ export class RaceSolverBuilder {
 				const SPARES = 3;
 				pacerTriggers = this._pacerSkillData.map(sd => {
 					const key = sd.perspective != null ? this.getSamplePolicyKey(sd.skillId, sd.perspective) : sd.skillId;
-					const occurrence = occurrences.get(key) || 0;
-					occurrences.set(key, occurrence + 1);
-					const sp = this._samplePolicyOverride.get(key) || sd.samplePolicy;
+					// HP-7 review-4 (E-I1): count victim-safe occurrences in their own map, not the shared
+					// one every other Perspective.Other add path counts into -- see the seed derivation
+					// below for why.
+					// HP-7 review-9 housekeeping, won't-fix (flagged by two separate review passes):
+					// sd.victimSafe is unreachably true here today -- the only assignment to
+					// _pacerSkillData (setupPacer() above) builds it via
+					// makePacerSkill(id, Perspective.Self), which never passes buildSkillData's
+					// victimSafe argument, so it defaults to false for every pacer skill. Every
+					// sd.victimSafe ternary in this block therefore always takes the non-debuff
+					// branch. Kept anyway (not deleted) to keep this site symmetrical with the
+					// identical victimSafe handling in build() below, which IS reachable (debuffs are
+					// only ever added via addOpponentDebuff's Perspective.Other path, never as a
+					// pacer) -- deleting the dead half here would desync the two call sites for no
+					// user-visible gain, and touching engine logic would require re-running the full
+					// regression suite. Deliberate won't-fix; see hp-7.md for the record.
+					const occMap = sd.victimSafe ? debuffOccurrences : occurrences;
+					const occurrence = occMap.get(key) || 0;
+					occMap.set(key, occurrence + 1);
+					// HP-7 review-3 fix 1: a victim-safe debuff's forced RandomPolicy (buildSkillData)
+					// must never be overridable -- see the identical guard and comment in build() below.
+					const sp = sd.victimSafe ? sd.samplePolicy : (this._samplePolicyOverride.get(key) || sd.samplePolicy);
 					const spares = sd.cooldown != null && samplePolicyPlacesMultiplePoints(sp) ? SPARES : 0;
-					const flat = sp.sample(sd.regions, this.nsamples, new Rule30CARng(deriveSeed(triggerSeed, `${key}:${occurrence}`)), spares);
+					// HP-7 review-4 (E-I1): seed from a `:debuff:`-namespaced key for victim-safe entries too
+					// -- `occurrence` alone isn't enough, since the shared `occurrences` map above only
+					// tracked one shared count for the key. Namespacing both means the presence of an
+					// unrelated same-id Perspective.Other add can no longer shift a debuff's RNG stream.
+					const seedKey = sd.victimSafe ? `${key}:debuff:${occurrence}` : `${key}:${occurrence}`;
+					const flat = sp.sample(sd.regions, this.nsamples, new Rule30CARng(deriveSeed(triggerSeed, seedKey)), spares);
 					return {flat, spares};
 				});
 			}
@@ -666,6 +751,7 @@ export class RaceSolverBuilder {
 					extraCondition: sd.extraCondition,
 					effects: sd.effects,
 					cooldown: sd.cooldown,
+					victimSafe: sd.victimSafe,
 					spares: spares > 0 ? flat.slice(n + si * spares, n + (si + 1) * spares) : undefined
 				};
 			})
@@ -802,6 +888,18 @@ export class RaceSolverBuilder {
 		return this;
 	}
 
+	// HP-7: a stamina debuff an opponent lands on THIS horse. Added with Perspective.Other so the
+	// effect applies (isTarget) but the horse gets no credit for casting it, and with its condition
+	// rewritten victim-safe. Deliberately leaves `cooldown` unset: no shipped debuff carries a
+	// cooldown (checked: all alternatives in both datasets -- 30 on JP, 21 on Global), and even if
+	// one did, RandomPolicy is a frozen singleton -- not AllCornerRandomPolicy or a
+	// DistributionRandomPolicy -- so samplePolicyPlacesMultiplePoints() returns false and it gets 0
+	// spares regardless (SKL-21).
+	addOpponentDebuff(skillId: string) {
+		this._skills.push({id: skillId, p: Perspective.Other, victimSafe: true});
+		return this;
+	}
+
 	/**
 	 * Adds a skill that will be forced to activate at a specific distance on the track.
 	 * This overrides the skill's normal activation conditions and sample policy.
@@ -921,9 +1019,12 @@ export class RaceSolverBuilder {
 		Object.freeze(wholeCourse);
 
 		const makeSkill = buildSkillData.bind(null, horse, this._raceParams, this._course, wholeCourse, this._parser);
-		const skilldata = this._skills.flatMap(({id,p,originWisdom}) => makeSkill(id, p, false, originWisdom));
+		const skilldata = this._skills.flatMap(({id,p,originWisdom,victimSafe}) => makeSkill(id, p, false, originWisdom, victimSafe));
 		this._extraSkillHooks.forEach(h => h(skilldata, horse, this._course));
 		const occurrences = new Map<string, number>();
+		// HP-7 review-4 (E-I1): victim-safe entries get their own occurrence-count and seed namespace --
+		// see the seed derivation below for why.
+		const debuffOccurrences = new Map<string, number>();
 		// SKL-21: a cooldown skill gets 3 spare candidates (+1 primary = 4 total) -- NOT a race-time
 		// guess, but the exact count all_corner_random's own policy already rolls. Per
 		// plans/condition-reference/conditions.md:125: "[all_corner_random] randomly picks four
@@ -942,11 +1043,38 @@ export class RaceSolverBuilder {
 		const SPARES = 3;
 		const triggers = skilldata.map(sd => {
 			const key = sd.perspective != null ? this.getSamplePolicyKey(sd.skillId, sd.perspective) : sd.skillId;
-			const occurrence = occurrences.get(key) || 0;
-			occurrences.set(key, occurrence + 1);
-			const sp = this._samplePolicyOverride.get(key) || sd.samplePolicy;
+			// HP-7 review-4 (E-I1): count victim-safe occurrences in their own map. `occurrences` above
+			// is the shared count `_samplePolicyOverride`'s key space depends on -- addOpponentDebuff's
+			// victim-safe entries share that same `${skillId}:${perspective}` key with every other
+			// Perspective.Other add path (an opponent's own equipped copy of the same skill,
+			// addSkillAtPosition's forced-position override, ...). Counting a victim-safe entry into the
+			// shared map, even though its *sample policy* is already protected from the override below,
+			// still shifts the `occurrence` number every other same-key entry sees, which in turn shifts
+			// their RNG seed -- exactly the "policy half fixed, seed half not" gap review-3 left open.
+			const occMap = sd.victimSafe ? debuffOccurrences : occurrences;
+			const occurrence = occMap.get(key) || 0;
+			occMap.set(key, occurrence + 1);
+			// HP-7 review-3 fix 1: `_samplePolicyOverride` is keyed only by `${skillId}:${perspective}`
+			// (getSamplePolicyKey), and addSkillAtPosition's forced-position override shares that key
+			// with addOpponentDebuff's victim-safe entry for the same skill/perspective pair -- e.g.
+			// uma A's own equipped debuff, forced to a position via the always-visible "Force @
+			// position" input (addSkillAtPosition(id, pos, Perspective.Other, ...)), and uma B's Stam
+			// Debuff dialog configuring the same skill id as an incoming debuff on the same builder
+			// (addOpponentDebuff(id), also Perspective.Other) collide on `${id}:Other`. A prior design
+			// note claimed setting `samplePolicy` on the returned SkillData already avoided this --
+			// wrong: the override map is consulted first and wins regardless of what `sd.samplePolicy`
+			// holds. A victim-safe debuff's forced RandomPolicy (buildSkillData) must therefore never
+			// be overridable, so it's checked before consulting the map at all -- an unrelated
+			// forced-position input silently collapsing every sampled activation of an incoming debuff
+			// onto one point would otherwise skew the whole Skill Chart's paired comparison.
+			const sp = sd.victimSafe ? sd.samplePolicy : (this._samplePolicyOverride.get(key) || sd.samplePolicy);
 			const spares = sd.cooldown != null && samplePolicyPlacesMultiplePoints(sp) ? SPARES : 0;
-			const flat = sp.sample(sd.regions, this.nsamples, new Rule30CARng(deriveSeed(skillTriggerSeed, `${key}:${occurrence}`)), spares);
+			// HP-7 review-4 (E-I1): namespace the seed key too, for the same reason as the occurrence
+			// map above -- this is the fix for the *seed* half of the collision (see the occurrence-map
+			// comment). Only NEW (HP-7) RNG streams move: an entry that isn't victimSafe still seeds
+			// from the exact same `${key}:${occurrence}` string as before.
+			const seedKey = sd.victimSafe ? `${key}:debuff:${occurrence}` : `${key}:${occurrence}`;
+			const flat = sp.sample(sd.regions, this.nsamples, new Rule30CARng(deriveSeed(skillTriggerSeed, seedKey)), spares);
 			return {flat, spares};
 		});
 
@@ -969,6 +1097,7 @@ export class RaceSolverBuilder {
 					effects: sd.effects,
 					originWisdom: sd.originWisdom,
 					cooldown: sd.cooldown,
+					victimSafe: sd.victimSafe,
 					spares: spares > 0 ? flat.slice(n + si * spares, n + (si + 1) * spares) : undefined
 				};
 			});

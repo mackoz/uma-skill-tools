@@ -11,7 +11,7 @@ import { attachMethods } from './RaceSolverTestHelpers';
 function makeStub(pos: number, wisdom: {shouldSkipWisdomCheck?: (s: PendingSkill) => boolean, checkWisdomForSkill?: (s: PendingSkill) => boolean} = {}) {
 	return attachMethods({
 		pos,
-		pendingRemoval: new Set<string>(),
+		pendingRemoval: new Set<PendingSkill>(),
 		shouldSkipWisdomCheck: wisdom.shouldSkipWisdomCheck ?? ((_: PendingSkill) => true),
 		checkWisdomForSkill: wisdom.checkWisdomForSkill ?? ((_: PendingSkill) => true)
 	}, 'pendingSkillAction', 'rearmSkill');
@@ -81,8 +81,31 @@ test('a zero-length padding spare can never satisfy a trigger window', () => {
 test('pendingRemoval wins over a re-arm', () => {
 	const s = skill({cooldown: 30, spares: [new Region(1500, 1510)], cooldownTimer: new Timer(1)});
 	const stub = makeStub(1005);
-	stub.pendingRemoval.add('200331');
+	// HP-7 review-5: pendingRemoval is keyed by PendingSkill identity, not bare skillId -- flag the
+	// exact instance under test, not some other same-id stand-in.
+	stub.pendingRemoval.add(s);
 	strictEqual(stub.pendingSkillAction(s), PendingAction.Remove);
+});
+
+// HP-7 review-9 (E-I5): mirrors the test above but flags a DIFFERENT PendingSkill instance that
+// happens to carry the same skillId, pinning that pendingSkillAction()'s lookup is by identity --
+// a same-id stand-in must not match. Scope, stated honestly: this exercises the `has()` half only.
+// It does NOT fail if production reverts to `pendingRemoval.add(s.skillId)`, because this stub adds
+// an object to the set, so a reverted `has(s.skillId)` looks up a string among objects and misses
+// either way. The `add()` half is pinned by gold-cooldown-exclusion.test.ts, which does fail under
+// that revert; the two together cover the ADR-0015 contract.
+test('pendingRemoval does not match a different instance sharing the same skillId', () => {
+	const s = skill({
+		trigger: new Region(1500, 1510),
+		cooldown: 30,
+		spares: [new Region(1800, 1810)],
+		cooldownTimer: new Timer(-12)   // 12s still to run
+	});
+	const otherInstanceSameId = skill({cooldown: 30, cooldownTimer: new Timer(1)});
+	const stub = makeStub(1505);
+	stub.pendingRemoval.add(otherInstanceSameId);
+	strictEqual(stub.pendingSkillAction(s), PendingAction.Rearm,
+		'a different instance carrying the same skillId must not cause this one to be removed');
 });
 
 // SKL-21 review (Important 2): the cooldown check must run before the wisdom check, but every

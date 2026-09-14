@@ -35,3 +35,5 @@ Numbers are never reused or renumbered, even if a record is retired — gaps are
 | [0011](0011-pin-strict-false.md) | `tsconfig.json` pins `"strict": false` rather than inheriting TypeScript 7's default | Accepted |
 | [0012](0012-vitest-unit-tests.md) | Vitest for unit test files; CLI harnesses stay on `tsx` | Accepted |
 | [0013](0013-value-scaling-identity-fallthrough.md) | Unimplemented value/duration scaling codes fall through to identity (1.0), by table | Accepted |
+| [0014](0014-victim-safe-debuff-conditions.md) | Victim-safe condition rewriting for incoming opponent debuffs | Accepted |
+| [0015](0015-pendingremoval-identity-keying.md) | `pendingRemoval` keyed by `PendingSkill` identity, not bare `skillId` | Accepted |

@@ -20,7 +20,7 @@ function makeStub(distance: number, pending: PendingSkill) {
 		pos: 1005,
 		course: {distance},
 		pendingSkills: [pending],
-		pendingRemoval: new Set<string>(),
+		pendingRemoval: new Set<PendingSkill>(),
 		activeTargetSpeedSkills: [],
 		activeCurrentSpeedSkills: [],
 		activeAccelSkills: [],
