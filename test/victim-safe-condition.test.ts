@@ -75,7 +75,9 @@ describe('victimSafeCondition', () => {
 		});
 
 		test('no shipped debuff condition strips to empty', () => {
-			for (const c of debuffConditions(skills)) expect(victimSafeCondition(c)).not.toBe('');
+			const conditions = debuffConditions(skills);
+			expect(conditions.length).toBeGreaterThan(0); // sanity: a for-of over an empty corpus passes vacuously
+			for (const c of conditions) expect(victimSafeCondition(c)).not.toBe('');
 		});
 
 		// HP-7 review-9 housekeeping: victimSafeCondition() deliberately PRESERVES '@' (OR)
@@ -91,7 +93,9 @@ describe('victimSafeCondition', () => {
 		// Do NOT broaden debuffAlternatives()'s target filter to "fix" this exclusion -- doing so
 		// would make this assertion fail on 113001211.
 		test('no shipped debuff condition strips to an OR', () => {
-			for (const c of debuffConditions(skills)) expect(victimSafeCondition(c)).not.toContain('@');
+			const conditions = debuffConditions(skills);
+			expect(conditions.length).toBeGreaterThan(0); // sanity: a for-of over an empty corpus passes vacuously
+			for (const c of conditions) expect(victimSafeCondition(c)).not.toContain('@');
 		});
 
 		// Peer-review fix (HP-7 review round 2, Important 5): ActivationConditions.ts's own comment
