@@ -171,9 +171,11 @@ describe('addOpponentDebuff running-style gating (target-18 debuffs)', () => {
 // HP-7 review-4 (C1, Critical): doActivateRandomGold()'s goldIndices predicate used to check only
 // rarity and effect type, so any victim carrying a SkillType.ActivateRandomGold (37) effect (e.g.
 // 110071, Summer Goldship's unique "Adventure of 564") could force-activate a pending incoming
-// debuff -- outside its real proc window, and since pendingRemoval is a Set keyed by bare skillId,
-// only one of N same-id configured copies got removed, so a surviving copy fired again later (N+1
-// drains). The fix adds `!skill.victimSafe` to the predicate.
+// debuff -- outside its real proc window, and because pendingRemoval was at the time a Set keyed by
+// bare skillId, only one of N same-id configured copies got removed, so a surviving copy fired
+// again later (N+1 drains). The fix adds `!skill.victimSafe` to the predicate. (pendingRemoval is
+// now keyed by PendingSkill identity -- see docs/adr/0015-pendingremoval-identity-keying.md; that
+// is a separate concern from this predicate, which governs selection rather than removal.)
 describe('addOpponentDebuff is immune to ActivateRandomGold force-activation (C1)', () => {
 	test('2 configured copies of a gold incoming debuff still activate exactly twice, inside their real window, when the victim carries an ActivateRandomGold skill', () => {
 		const course = CourseHelpers.getCourse(COURSE_ID);

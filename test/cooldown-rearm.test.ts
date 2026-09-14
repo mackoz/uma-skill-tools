@@ -88,8 +88,12 @@ test('pendingRemoval wins over a re-arm', () => {
 });
 
 // HP-7 review-9 (E-I5): mirrors the test above but flags a DIFFERENT PendingSkill instance that
-// happens to carry the same skillId. Under bare-skillId keying this would incorrectly match and
-// return Remove; under identity keying (ADR-0015) it must not.
+// happens to carry the same skillId, pinning that pendingSkillAction()'s lookup is by identity --
+// a same-id stand-in must not match. Scope, stated honestly: this exercises the `has()` half only.
+// It does NOT fail if production reverts to `pendingRemoval.add(s.skillId)`, because this stub adds
+// an object to the set, so a reverted `has(s.skillId)` looks up a string among objects and misses
+// either way. The `add()` half is pinned by gold-cooldown-exclusion.test.ts, which does fail under
+// that revert; the two together cover the ADR-0015 contract.
 test('pendingRemoval does not match a different instance sharing the same skillId', () => {
 	const s = skill({
 		trigger: new Region(1500, 1510),
