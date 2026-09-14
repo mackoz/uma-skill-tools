@@ -78,6 +78,22 @@ describe('victimSafeCondition', () => {
 			for (const c of debuffConditions(skills)) expect(victimSafeCondition(c)).not.toBe('');
 		});
 
+		// HP-7 review-9 housekeeping: victimSafeCondition() deliberately PRESERVES '@' (OR)
+		// structure (see its own `branches.join('@')` above) -- but StaminaDebuffs.ts's three
+		// parsers (parseWindow/parseDistanceType/parseStrategy) each split on /[&@]/ indiscriminately
+		// and take the FIRST matching clause, silently dropping any other distinct value a real OR
+		// would carry. Dormant today: debuffAlternatives() above filters on OTHER_TARGETS, and zero
+		// of the resulting debuff-capable conditions (30 JP / 21 Global) strip to an '@'. The one
+		// skill that WOULD (113001211: `phase_random==1&ground_type==1&slope==1@phase_random==1&
+		// ground_type==1&slope==2`, stripping to `phase_random==1@phase_random==1`) is excluded only
+		// because its effects are SkillTarget.Self, not one of OTHER_TARGETS -- and its two branches
+		// happen to be identical, so a first-match parser would be accidentally correct on it anyway.
+		// Do NOT broaden debuffAlternatives()'s target filter to "fix" this exclusion -- doing so
+		// would make this assertion fail on 113001211.
+		test('no shipped debuff condition strips to an OR', () => {
+			for (const c of debuffConditions(skills)) expect(victimSafeCondition(c)).not.toContain('@');
+		});
+
 		// Peer-review fix (HP-7 review round 2, Important 5): ActivationConditions.ts's own comment
 		// above these four entries warns "abusing valueFilter like this only works because these
 		// conditions are used like running_style_count_nige_otherself>=1" -- each is implemented as a

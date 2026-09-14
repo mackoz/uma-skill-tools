@@ -702,6 +702,18 @@ export class RaceSolverBuilder {
 					// HP-7 review-4 (E-I1): count victim-safe occurrences in their own map, not the shared
 					// one every other Perspective.Other add path counts into -- see the seed derivation
 					// below for why.
+					// HP-7 review-9 housekeeping, won't-fix (flagged by two separate review passes):
+					// sd.victimSafe is unreachably true here today -- the only assignment to
+					// _pacerSkillData (setupPacer() above) builds it via
+					// makePacerSkill(id, Perspective.Self), which never passes buildSkillData's
+					// victimSafe argument, so it defaults to false for every pacer skill. Every
+					// sd.victimSafe ternary in this block therefore always takes the non-debuff
+					// branch. Kept anyway (not deleted) to keep this site symmetrical with the
+					// identical victimSafe handling in build() below, which IS reachable (debuffs are
+					// only ever added via addOpponentDebuff's Perspective.Other path, never as a
+					// pacer) -- deleting the dead half here would desync the two call sites for no
+					// user-visible gain, and touching engine logic would require re-running the full
+					// regression suite. Deliberate won't-fix; see hp-7.md for the record.
 					const occMap = sd.victimSafe ? debuffOccurrences : occurrences;
 					const occurrence = occMap.get(key) || 0;
 					occMap.set(key, occurrence + 1);

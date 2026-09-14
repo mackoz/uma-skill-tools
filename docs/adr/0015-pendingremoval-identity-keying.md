@@ -1,7 +1,11 @@
 # ADR-0015: `pendingRemoval` keyed by `PendingSkill` identity, not bare `skillId`
 
 **Status:** Accepted
-**Date:** 2026-09-13 (HP-7, review round 5)
+**Date:** 2026-09-13 (HP-7, review round 5). This repo labelled the fix "review-5" under its own
+earlier per-repo review counter before the ticket's cross-repo numbering (adopted at this repo's
+review-8, `f4955e9`) settled on calling it Round 8; the ticket's own Round 5 is an unrelated
+incident (the `DebuffBucket` strategy-field regression). Do not confuse the two when following this
+citation from the ticket.
 
 ## Context
 
