@@ -112,9 +112,12 @@ See `docs/adr/0014-victim-safe-debuff-conditions.md` for the rationale, includin
 victim's own running style once rewritten (see above) -- and what stays latent: only a
 *hypothetical* future target-18 skill lacking that term would be unmodeled.
 
-An incoming debuff is a complete no-op outside `mode: 'compare'` -- `NoopHpPolicy.recover()`
+An incoming debuff's HP drain is a no-op outside `mode: 'compare'` -- `NoopHpPolicy.recover()`
 (`HpPolicy.ts`) is `{}`, so nothing observes the drain unless the builder was given a
-`GameHpPolicy`, which only `mode('compare')` does.
+`GameHpPolicy`, which only `mode('compare')` does. This is about the drain only: `201021` and
+`201022` also carry a `SkillType.Accel` effect at `SkillTarget.AheadOfSelf`, which applies under
+`Perspective.Other` regardless of HP policy, since `AheadOfSelf` is not `Self` and so is not mapped
+to `Noop` by `buildSkillEffects()`.
 
 ## Skill cooldowns
 

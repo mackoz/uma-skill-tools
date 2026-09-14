@@ -87,6 +87,23 @@ test('pendingRemoval wins over a re-arm', () => {
 	strictEqual(stub.pendingSkillAction(s), PendingAction.Remove);
 });
 
+// HP-7 review-9 (E-I5): mirrors the test above but flags a DIFFERENT PendingSkill instance that
+// happens to carry the same skillId. Under bare-skillId keying this would incorrectly match and
+// return Remove; under identity keying (ADR-0015) it must not.
+test('pendingRemoval does not match a different instance sharing the same skillId', () => {
+	const s = skill({
+		trigger: new Region(1500, 1510),
+		cooldown: 30,
+		spares: [new Region(1800, 1810)],
+		cooldownTimer: new Timer(-12)   // 12s still to run
+	});
+	const otherInstanceSameId = skill({cooldown: 30, cooldownTimer: new Timer(1)});
+	const stub = makeStub(1505);
+	stub.pendingRemoval.add(otherInstanceSameId);
+	strictEqual(stub.pendingSkillAction(s), PendingAction.Rearm,
+		'a different instance carrying the same skillId must not cause this one to be removed');
+});
+
 // SKL-21 review (Important 2): the cooldown check must run before the wisdom check, but every
 // test above stubs shouldSkipWisdomCheck to always skip it -- none of them actually exercise the
 // wisdom branch, so none could catch the two lines being swapped. This test uses a wisdom stub

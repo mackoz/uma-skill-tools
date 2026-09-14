@@ -90,7 +90,7 @@ describe('addOpponentDebuff', () => {
 	// two results -- true by construction of the seeded builder regardless of whether
 	// addOpponentDebuff draws RNG when unused, so it asserted nothing. The real guard against
 	// addOpponentDebuff drawing RNG when the debuff list is empty is test/regression/check.ts's
-	// full checkpoint replay (956,108 assertions across the fixed-seed corpus), which would fail if
+	// full checkpoint replay across the fixed-seed corpus, which would fail if
 	// an unused code path started consuming RNG and shifting every subsequent draw.
 
 	// HP-7 review-3 fix 1 (Important): _samplePolicyOverride is keyed only by `${skillId}:${perspective}`

@@ -116,7 +116,7 @@ patch scoped to one call site.
 ## Consequences
 
 - This changes simulated race outcomes for any race containing a type-37 (`ActivateRandomGold`)
-  carrier — `110071` ("Adventure of 564", rarity-2/Gold) or `910071` (the same skill's rarity-1
+  carrier — `110071` ("Adventure of 564", data rarity 5 → `SkillRarity.Unique`) or `910071` (the same skill's rarity-1
   form, inheritable by any uma) — alongside a duplicate-`skillId` pending entry, whether that
   duplication comes from a repeated id in a presupposed/equipped skill list, a multi-alternative
   skill producing more than one pending entry for its id, or (the newly-reachable case)

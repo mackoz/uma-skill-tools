@@ -185,8 +185,9 @@ strategy, left to a future ticket as before.
   this guarantee did not yet hold: `doActivateRandomGold()` filtered on rarity and effect type only,
   so a gold-or-Evolution incoming debuff (14 of the 30 shipped skills qualify) could be
   force-activated by an unrelated `SkillType.ActivateRandomGold` effect on the victim, firing
-  outside its window and — because `pendingRemoval` is a `Set` keyed by bare `skillId` — only
-  removing one of N same-id configured copies, so a surviving copy fired again (N+1 drains). Fixed
+  outside its window and — because `pendingRemoval` was at the time a `Set` keyed by bare
+  `skillId` (since fixed; see `docs/adr/0015-pendingremoval-identity-keying.md`) — only removing
+  one of N same-id configured copies, so a surviving copy fired again (N+1 drains). Fixed
   by excluding victim-safe entries from that pool; see `test/opponent-debuff.test.ts`'s regression
   test for the repro.
 - `VictimSafeConditions` must be extended whenever a new debuff-relevant condition term is
