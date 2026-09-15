@@ -68,8 +68,8 @@ state since it adopted 7.0.2, ahead of this engine — PIPE-53 only brought the 
 `files.includes: ["test/**"]`, formatter and assist disabled (this is a fork of
 `alpha123/uma-skill-tools`; bulk-formatting it would create permanent diff noise against upstream
 for no gain), with `linter.rules.suspicious.noFocusedTests`/`noSkippedTests`/
-`noDuplicateTestHooks`/`noExportsInTest` at `"error"`. It runs `biome lint --only=<rule>` for
-each of the four rather than a bare `biome check .`, since this engine has no general lint
+`noDuplicateTestHooks`/`noExportsInTest` at `"error"`. It is one `biome lint` invocation carrying an
+`--only=suspicious/<rule>` flag per rule, rather than a bare `biome check .`, since this engine has no general lint
 config or format baseline to be green against. `npm test` **prepends** it, ahead of `vitest run`
 — a planted `test.only`/`it.only` makes `vitest run` itself exit green (only the focused test
 runs), so appending the check would sit behind the ~30s `-n 500` `race.ts` harness before
