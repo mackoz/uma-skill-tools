@@ -16,11 +16,16 @@ That formula was a faithful port of this project's imported reference,
 `0.3 + SlopePer/10` in units where `SlopePer = slopePer / 10000`. The engine was not
 misimplementing its source; the source itself carried the error.
 
-The question had been open since 2026-08-25 and was explicitly gated on evidence: two
-third-party implementations (hakuraku's `raceConstants.ts`, and `mee1080/umasim`'s
-`RaceState.kt:254`) independently used the slope's absolute value, but a cross-implementation
-survey is not measurement, and a doc-vs-doc disagreement was judged too weak to flip a numeric
-constant on. A prior attempt to settle it from real replay data (PIPE-21) was inconclusive, and a
+The question had been open since 2026-08-25 and was explicitly gated on evidence: three
+third-party implementations independently used the slope's absolute value — hakuraku's
+`raceConstants.ts`, `mee1080/umasim`'s `RaceState.kt:254`, and `Tunnelbliick/umacalc`'s
+`src/simulator/simulator.ts` (`Math.abs(currentSlope) / 10 + 0.3`, under a comment reading
+"steeper decline = more speed") — but a cross-implementation survey is not measurement, and a
+doc-vs-doc disagreement was judged too weak to flip a numeric constant on.
+
+Worth noting in hindsight: `umacalc`'s author is one of the two people credited with building
+the server-side reimplementation that ultimately settled this, so that 2024 implementation was
+already correct two years before we could verify it. A prior attempt to settle it from real replay data (PIPE-21) was inconclusive, and a
 corrected re-run of that measurement actively pointed the *wrong* way — see Consequences.
 
 What changed is the evidence available. On 2026-09-13 hakuraku shipped `/racedata` resimulation
@@ -71,7 +76,7 @@ bonus) and never less.
   community reverse-engineering effort that explicitly disclaims guaranteed correctness, and a
   simulator that reproduces server output is strictly better evidence about server behaviour than
   a prose description of it.
-- **Flip on the cross-implementation survey alone** (hakuraku + umasim both using `abs`).
+- **Flip on the cross-implementation survey alone** (hakuraku, umasim and umacalc all using `abs`).
   Rejected at the time, and correctly: agreement between two third-party implementations is not
   evidence about the game, and a third implementation (`jalbarrang/torena-sim`) agreed with *our*
   signed version — which turned out to be worthless as corroboration, because its own mechanics
