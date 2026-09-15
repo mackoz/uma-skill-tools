@@ -3,6 +3,32 @@
 // detector so the detection doesn't depend on the speed effect being measured. No
 // simulator run -- pure corpus measurement over a directory of decoded replays.
 //
+// ============================================================================
+// READ THIS BEFORE REUSING THIS TOOL TO ARBITRATE A SPEED FORMULA. It already
+// produced one confidently wrong answer, and the flaw is in the approach, not in
+// the four defects fixed further down.
+//
+// This tool measures OBSERVED speed. Most speed mechanics -- the downhill bonus
+// included -- set TARGET speed, which an uma accelerates toward rather than
+// jumping to. Combined with the ~1.07s frame cadence smearing the edges of spells
+// averaging a few seconds, both effects attenuate the estimate toward zero.
+//
+// On SPD-7 that turned a true +0.4 m/s into a measured +0.2234 with a 95% CI of
+// [0.2055, 0.2413] -- tight enough to look decisive, and it was used to argue the
+// engine's (wrong) formula was correct. The CI measured precision, not whether the
+// right quantity was being measured. The correct answer came instead from
+// hakuraku's /racedata resimulation, whose `detailedSimulation.annotations` expose
+// exact mode spans and a per-sample `targetSpeeds` series.
+//
+// So: treat any speed number out of this tool as a LOWER BOUND on a target-speed
+// effect, never as a point estimate. Prefer `targetSpeeds` wherever a race can be
+// resimulated. Full write-up in docs/adr/0016-downhill-bonus-absolute-slope.md
+// (Consequences) and the SPD-7 ticket.
+//
+// The HP-side measurement below is not subject to this -- HP drain is a direct
+// function of current speed, with no target/actual gap -- and is sound.
+// ============================================================================
+//
 // Settles (partially) SPD-7 -- see that ticket for the two competing formulas this
 // was built to distinguish. Run: `npx tsx tools/replay/measureDownhill.ts <dir>`.
 //
@@ -174,13 +200,20 @@ function run(dir: string) {
 	console.log(`[at/after 2/3 dist] paired horse-runs: ${atOrAfterPhase2.n}, mean diff (active - inactive): ${atOrAfterPhase2.n > 0 ? atOrAfterPhase2.mean.toFixed(4) : 'n/a'} m/s, sd=${atOrAfterPhase2.n > 0 ? atOrAfterPhase2.sd.toFixed(4) : 'n/a'}`);
 	if (atOrAfterPhase2.n > 0) console.log(`                  95% CI: [${atOrAfterPhase2.ciLow.toFixed(4)}, ${atOrAfterPhase2.ciHigh.toFixed(4)}] m/s`);
 
-	console.log('NOTE: candidate speed bonuses under test are +0.2 m/s (engine+doc) vs +0.4 m/s (hakuraku) at a 1% grade.');
-	console.log('The detector above now isolates the 0.4x downhill HP-consumption factor specifically (threshold 0.5,');
-	console.log('guts modifier applied past 2/3 course distance, interval-average speed, rushed frames excluded --');
-	console.log('see SPD-7 and the corrections cited at this file\'s top). The phase split exists because target speed');
-	console.log('changes at the 2/3-distance boundary independent of the downhill bonus: a whole-band paired diff can');
-	console.log('be skewed by active/inactive frames sitting on opposite sides of that boundary rather than by the');
-	console.log('downhill speed bonus itself. Compare the three numbers above before drawing a conclusion.');
+	console.log('WARNING: these speed numbers are LOWER BOUNDS, not point estimates. This tool measures observed');
+	console.log('speed; the downhill bonus sets TARGET speed, which an uma accelerates toward rather than jumping to,');
+	console.log('and the ~1.07s frame cadence smears the edges of spells averaging a few seconds. On SPD-7 that');
+	console.log('attenuated a true +0.4 m/s to a measured +0.2234 with a 95% CI of [0.2055, 0.2413] -- tight enough');
+	console.log('to look decisive, and it was used to argue for the wrong formula. SPD-7 was ultimately settled from');
+	console.log('the targetSpeeds series in hakuraku\'s /racedata resimulation, not from this tool. Do not arbitrate a');
+	console.log('speed formula on these numbers alone -- see docs/adr/0016-downhill-bonus-absolute-slope.md.');
+	console.log('');
+	console.log('The HP-ratio cross-check above is NOT subject to that caveat and is sound: HP drain is a direct');
+	console.log('function of current speed, with no target/actual gap. The detector isolates the 0.4x downhill factor');
+	console.log('(threshold 0.5, guts modifier past 2/3 distance, interval-average speed, rushed frames excluded).');
+	console.log('The phase split controls for target speed changing at the 2/3-distance boundary independent of the');
+	console.log('downhill bonus: a whole-band paired diff can be skewed by active/inactive frames sitting on opposite');
+	console.log('sides of it. Compare the three numbers above before drawing any conclusion.');
 
 	console.log('\n--- full ratio histogram (all downhill-band samples, bin=0.1) ---');
 	printHistogram(samples);
