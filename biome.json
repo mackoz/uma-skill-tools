@@ -1,0 +1,29 @@
+{
+	"$schema": "https://biomejs.dev/schemas/2.5.13/schema.json",
+	"vcs": {
+		"enabled": true,
+		"clientKind": "git",
+		"useIgnoreFile": true
+	},
+	"files": {
+		"includes": ["test/**", "!test/regression/checkpoints/**"]
+	},
+	"formatter": {
+		"enabled": false
+	},
+	"assist": {
+		"enabled": false
+	},
+	"linter": {
+		"enabled": true,
+		"rules": {
+			"preset": "none",
+			"suspicious": {
+				"noFocusedTests": "error",
+				"noSkippedTests": "error",
+				"noDuplicateTestHooks": "error",
+				"noExportsInTest": "error"
+			}
+		}
+	}
+}
