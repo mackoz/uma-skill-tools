@@ -11,7 +11,7 @@
   "author": "pecan",
   "license": "GPL-3.0-or-later",
   "devDependencies": {
-    "@biomejs/biome": "^2.5.9",
+    "@biomejs/biome": "^2.5.13",
     "@types/node": "^24.0.0",
     "@types/tape": "^4.13.2",
     "fast-check": "^3.0.1",
