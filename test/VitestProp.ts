@@ -6,6 +6,9 @@ import { test } from 'vitest';
 // import graph to CommonJS in this package -- no "type": "module" -- and vitest refuses to be
 // require()'d). Keeping this vitest-dependent wrapper in its own module means TestHelpers.ts stays
 // framework-free and safe for race.ts to import, exactly as before this migration.
+// PIPE-76: deliberately exposes no .only/.skip -- Biome's noFocusedTests/noSkippedTests tripwire
+// does not see through a custom wrapper's own methods, so adding either would make a focused or
+// skipped property test invisible to lint.
 export function prop(msg: string, f: () => void) {
 	test(msg, () => {
 		f();

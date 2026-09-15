@@ -4,12 +4,14 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "test": "vitest run && tsx test/race.ts -n 500 && tsx test/regression/check.ts --fast",
+    "lint:tests": "biome lint --only=suspicious/noFocusedTests --only=suspicious/noSkippedTests --only=suspicious/noDuplicateTestHooks --only=suspicious/noExportsInTest .",
+    "test": "npm run lint:tests && vitest run && tsx test/race.ts -n 500 && tsx test/regression/check.ts --fast",
     "typecheck": "tsc --noEmit"
   },
   "author": "pecan",
   "license": "GPL-3.0-or-later",
   "devDependencies": {
+    "@biomejs/biome": "^2.5.9",
     "@types/node": "^24.0.0",
     "@types/tape": "^4.13.2",
     "fast-check": "^3.0.1",
