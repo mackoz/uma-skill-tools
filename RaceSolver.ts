@@ -1448,7 +1448,14 @@ export class RaceSolver {
 
 		if (this.isDownhillMode) {
 			// ANCHOR: downhill-accel-bonus-formula
-			this.targetSpeed += 0.3 + this.slopePer / 100000.0;
+			// SPD-7: absolute value, so the bonus grows with steepness (0.4/0.5/0.6 m/s at
+			// 1%/2%/3%) instead of shrinking to zero at a 3% grade as the signed form did.
+			// Confirmed against the server-matching simulator behind hakuraku's /racedata
+			// resimulation: 26 unconfounded downhill-span target-speed steps across three
+			// seeds on course 10808 (2% grade) all measured exactly +0.500, never the signed
+			// form's +0.100. This deliberately diverges from the imported KuromiAK doc --
+			// see docs/adr/0016-downhill-bonus-absolute-slope.md.
+			this.targetSpeed += 0.3 + Math.abs(this.slopePer) / 100000.0;
 		} else if (this.hillIdx != -1 && this.slopePer > 0) {
 			// recalculating this every frame is actually measurably faster than calculating the penalty for each slope ahead of time, somehow
 			// ANCHOR: uphill-slope-penalty-formula
