@@ -42,8 +42,12 @@ function expectedHpConsumption(speed: number, courseDistance: number, pastPhase2
 // SPD-7: 0.5, not hakuraku's 0.8 -- ported from torena-sim's reference detector
 // (capture_accuracy.rs's `observed_downhill_regions`), whose own comment is the reasoning:
 // PositionKeep's PaceDown modifier is 0.6x and never gets as low as 0.5, so a 0.5 threshold
-// isolates the downhill 0.4x factor (HpPolicy.ts's ANCHOR: downhill-hp-modifier) cleanly,
-// where 0.8 let PaceDown-contaminated frames cross into "active".
+// isolates the downhill 0.4x factor (HpPolicy.ts@downhill-hp-modifier) cleanly. Note PaceDown
+// cannot actually reach this course's 950m band at all -- position keep ends at
+// `sectionLength * 3` = 200m (667m in compare mode) on 1600m, RaceSolver.ts:516,530 -- so 0.8's
+// real problem here was not PaceDown but the missing guts modifier inflating every ratio past
+// 2/3 distance by ~1.3x. The 0.5 threshold is kept anyway: it is the reference's, and it stays
+// correct on courses where a downhill band does overlap position keep.
 const DOWNHILL_HP_RATIO_THRESHOLD = 0.5;
 
 interface Sample { file: string; horse: number; t: number; dist: number; speed: number; ratio: number; active: boolean; pastPhase2: boolean; }
@@ -115,7 +119,7 @@ function run(dir: string) {
 				if (!onDownhill) continue;
 
 				// SPD-7: exclude rushed frames -- Rushed applies its own 1.6x HP modifier
-				// (HpPolicy.ts's ANCHOR: lead-competition-hp-modifier's `else if (state.isRushed)`
+				// (HpPolicy.ts@lead-competition-hp-modifier's `else if (state.isRushed)`
 				// branch) which would otherwise masquerade as a low HP-ratio active frame. Require
 				// both endpoints unrushed, and a live (non-exhausted) horse at the far endpoint.
 				if (a.temptationMode !== 0 || b.temptationMode !== 0) continue;
@@ -148,8 +152,9 @@ function run(dir: string) {
 
 	console.log('\n--- HP-ratio cross-check (engine predicts 0.4x during downhill, HpPolicy.ts:67) ---');
 	console.log('active-frame ratio stats:', stats(active.map(s => s.ratio)));
-	const deep = samples.filter(s => s.ratio < 0.5); // isolates the 0.4x downhill factor from PaceDown's 0.6x -- see DOWNHILL_HP_RATIO_THRESHOLD's comment
-	console.log(`deep-active (ratio<0.5): n=${deep.length}, mean=${(deep.reduce((a, b) => a + b.ratio, 0) / deep.length).toFixed(4)}`);
+	// PIPE-21's separate "deep-active (ratio<0.5)" cut is gone: the classification threshold is
+	// itself 0.5 now, so that filter would reproduce `active` exactly. The active-frame stats
+	// printed just above are the 0.4x cross-check.
 
 	// SPD-7: split by phase-2 boundary in addition to the whole band. Target speed changes
 	// at the phase boundary independent of the downhill bonus, so a paired active-vs-inactive
