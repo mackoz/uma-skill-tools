@@ -511,8 +511,8 @@ export class RaceSolverBuilder {
 	_skills: {id: string, p: Perspective, originWisdom?: number, victimSafe?: boolean}[]
 	_samplePolicyOverride: Map<string, ActivationSamplePolicy>
 	_extraSkillHooks: ((skilldata: SkillData[], horse: HorseParameters, course: CourseData) => void)[]
-	_onSkillActivate: (state: RaceSolver, skillId: string) => void
-	_onSkillDeactivate: (state: RaceSolver, skillId: string) => void
+	_onSkillActivate: (state: RaceSolver, skillId: string, perspective: Perspective) => void
+	_onSkillDeactivate: (state: RaceSolver, skillId: string, perspective: Perspective) => void
 	_posKeepMode: PosKeepMode
 	_mode: string | undefined
 	_skillWisdomCheck: boolean | undefined
@@ -959,12 +959,12 @@ export class RaceSolverBuilder {
 		return this;
 	}
 
-	onSkillActivate(cb: (state: RaceSolver, skillId: string) => void) {
+	onSkillActivate(cb: (state: RaceSolver, skillId: string, perspective: Perspective) => void) {
 		this._onSkillActivate = cb;
 		return this;
 	}
 
-	onSkillDeactivate(cb: (state: RaceSolver, skillId: string) => void) {
+	onSkillDeactivate(cb: (state: RaceSolver, skillId: string, perspective: Perspective) => void) {
 		this._onSkillDeactivate = cb;
 		return this;
 	}

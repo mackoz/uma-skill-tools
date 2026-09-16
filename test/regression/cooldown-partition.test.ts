@@ -69,7 +69,8 @@ const cooldownSkillIds = new Set(
 // today: one entry carries `cooldown: 30` (placed via all_corner_random, gets spares), the other
 // has no cooldown at all (placed via is_activate_other_skill_detail, gets none) -- the cooldown
 // entry's own re-arms plus the detail entry's own single activation both count against the same
-// skillId under onSkillActivate's signature, which reports only a skillId, not which entry fired.
+// skillId -- onSkillActivate's signature also reports a perspective, but not which entry fired,
+// so two entries sharing a skillId are still indistinguishable from the callback's point of view.
 // A sampled 408061 could legitimately reach up to MaxActivationsWithCooldown + 1 activations (one
 // from the detail entry, the rest from the cooldown entry re-arming) without any bug at all --
 // latent today only because no sampled case has hit it (max observed for this skill: 2), but a
